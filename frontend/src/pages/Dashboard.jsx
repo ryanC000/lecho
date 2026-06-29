@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import practices from '../data/practicesData';
+import { Link, useLoaderData } from 'react-router-dom';
 
 const levels = ['All', 'A1', 'A2', 'B1', 'B2', 'C1'];
 
@@ -13,6 +12,7 @@ const levelColors = {
 };
 
 export default function Dashboard() {
+  const practices = useLoaderData();
   const [activeLevel, setActiveLevel] = useState('All');
 
   const filtered = activeLevel === 'All'
@@ -20,12 +20,12 @@ export default function Dashboard() {
     : practices.filter(p => p.level === activeLevel);
 
   return (
-    <div className="flat-section page-enter">
+    <div className="flat-section">
       {/* Hero welcome */}
       <div className="dashboard-hero">
         <h2 className="dashboard-hero-title">Bienvenue</h2>
         <p className="dashboard-hero-sub">
-          {practices.length} practice sessions ready for you — pick one and begin
+          {practices.length} practice sessions ready for you, pick one and begin
         </p>
       </div>
 
@@ -55,7 +55,7 @@ export default function Dashboard() {
             <div className="practice-card-header">
               <span
                 className="level-badge"
-                style={{ 
+                style={{
                   backgroundColor: levelColors[practice.level],
                   viewTransitionName: `level-${practice.id}`
                 }}

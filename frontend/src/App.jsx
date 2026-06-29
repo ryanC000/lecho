@@ -1,5 +1,5 @@
 import React from 'react';
-import { createBrowserRouter, RouterProvider, Link, Outlet, useLocation } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Link, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
 import Practice from './pages/Practice';
@@ -9,10 +9,6 @@ import './index.css';
 // Global Layout Wrapper
 function Layout() {
   const location = useLocation();
-
-  React.useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
 
   const [mousePos, setMousePos] = React.useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
@@ -53,6 +49,7 @@ function Layout() {
       </header>
 
       <main className="content">
+        <ScrollRestoration />
         <Outlet />
       </main>
     </div>
@@ -64,10 +61,26 @@ const router = createBrowserRouter([
     path: "/",
     element: <Layout />,
     children: [
-      { index: true, element: <Dashboard /> },
-      { path: "library", element: <Library /> },
-      { path: "practice/:id", element: <Practice /> },
-      { path: "results/:jobId", element: <Results /> }
+      { 
+        index: true, 
+        element: <Dashboard />,
+        loader: async () => fetch('http://localhost:8000/practices').then(r => r.json())
+      },
+      { 
+        path: "library", 
+        element: <Library />,
+        loader: async () => fetch('http://localhost:8000/practices').then(r => r.json())
+      },
+      { 
+        path: "practice/:id", 
+        element: <Practice />,
+        loader: async ({ params }) => fetch(`http://localhost:8000/practices/${params.id}`).then(r => r.json())
+      },
+      { 
+        path: "results/:jobId", 
+        element: <Results />,
+        loader: async ({ params }) => fetch(`http://localhost:8000/practices/${params.jobId}`).then(r => r.json())
+      }
     ]
   }
 ]);

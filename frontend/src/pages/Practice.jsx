@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link, useLoaderData } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
 import { generateMockAudioBlob } from '../utils/audio';
-import practices from '../data/practicesData';
 
 const levelColors = {
   A1: 'var(--color-level-a1)',
@@ -17,24 +16,22 @@ const levelColors = {
 export default function Practice() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const practice = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
   const [nativeAudioUrl, setNativeAudioUrl] = useState(null);
 
-  const practice = useMemo(
-    () => practices.find(p => p.id === Number(id)) || practices[0],
-    [id]
-  );
-
   useEffect(() => {
-    if (practice.audioUrl) {
-      setNativeAudioUrl(practice.audioUrl);
+    if (!practice) return;
+    
+    if (practice.audio_url) {
+      setNativeAudioUrl(practice.audio_url);
     } else {
       const blob = generateMockAudioBlob(practice.duration);
       setNativeAudioUrl(URL.createObjectURL(blob));
     }
 
     return () => {
-      if (nativeAudioUrl && !practice.audioUrl) {
+      if (nativeAudioUrl && !practice.audio_url) {
         URL.revokeObjectURL(nativeAudioUrl);
       }
     };
@@ -50,7 +47,7 @@ export default function Practice() {
   };
 
   return (
-    <div className="workspace page-enter">
+    <div className="workspace">
       <Link 
         to="/" 
         viewTransition 
@@ -79,11 +76,11 @@ export default function Practice() {
       </section>
 
       {/* ── Video / Audio placeholder ── */}
-      {practice.videoUrl ? (
+      {practice.video_url ? (
         <section className="flat-section">
           <h3>Video</h3>
           <div className="video-container">
-            <video controls src={practice.videoUrl} />
+            <video controls src={practice.video_url} />
           </div>
         </section>
       ) : (

@@ -1,16 +1,11 @@
-import React, { useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React from 'react';
+import { useParams, Link, useLoaderData } from 'react-router-dom';
 import AccuracyRing from '../components/AccuracyRing';
 import TranslationOverlay from '../components/TranslationOverlay';
-import practices from '../data/practicesData';
 
 export default function Results() {
   const { jobId } = useParams();
-
-  const practice = useMemo(
-    () => practices.find(p => p.id === Number(jobId)) || practices[0],
-    [jobId]
-  );
+  const practice = useLoaderData();
 
   // Mocked results
   const results = {
