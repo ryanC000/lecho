@@ -157,3 +157,10 @@ Before moving this PRD directly into an engineering sprint, we need to clarify t
 1.  **The Choice of Signal Comparison Depth:** Should the background worker analyze Pitch/Intonation ($F_0$) alone, or should we also measure Energy/Volume ($RMS$ amplitude)? Measuring energy captures syllable emphasis and structural pauses, which adds depth to the feedback but increases the algorithmic complexity of the worker container.
 2.  **Linguistic Scope Control:** Are we strictly evaluating prosody (the cadence, rhythm, and melody), or do we want the worker to flag instances where the user says the completely wrong word? If we want to check for literal word errors, we would need to add an explicit Speech-to-Text alignment step (like Whisper) before running the DTW pitch analysis.
 3.  **The Multi-User Scaling Budget:** Under a heavy testing environment (e.g., a whole class of language students submitting responses simultaneously), how do you want the worker cluster to handle scaling? We can write Terraform rules to autoscale our EC2 container fleet based on the SQS queue depth, but we need to set a maximum instance cap to keep your AWS billing safe.
+
+
+## Inspiration/References:
+https://dribbble.com/shots/22583669-Perfume-Spray-Easter-Egg
+https://onepagelove.com/tag/hand-drawn
+https://dribbble.com/shots/25119989-hand-drawn-animation-for-website
+https://dribbble.com/search/hand-drawn-website
