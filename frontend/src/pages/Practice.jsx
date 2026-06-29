@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
@@ -51,18 +51,30 @@ export default function Practice() {
 
   return (
     <div className="workspace page-enter">
+      <Link 
+        to="/" 
+        viewTransition 
+        className="back-btn"
+        aria-label="Back to Dashboard"
+      >
+        ← Back
+      </Link>
+
       {/* ── Practice header with metadata ── */}
       <section className="practice-header">
-        <h2 className="practice-title">{practice.title}</h2>
+        <h2 className="practice-title" style={{ viewTransitionName: `title-${practice.id}` }}>{practice.title}</h2>
         <div className="meta-badges">
           <span
             className="level-badge"
-            style={{ backgroundColor: levelColors[practice.level] }}
+            style={{ 
+              backgroundColor: levelColors[practice.level],
+              viewTransitionName: `level-${practice.id}`
+            }}
           >
             {practice.level}
           </span>
-          <span className="meta-tag">{practice.length}</span>
-          <span className="meta-tag">{practice.speed} speed</span>
+          <span className="meta-tag" style={{ viewTransitionName: `length-${practice.id}` }}>{practice.length}</span>
+          <span className="meta-tag" style={{ viewTransitionName: `speed-${practice.id}` }}>{practice.speed} speed</span>
         </div>
       </section>
 

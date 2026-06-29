@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Outlet, useLocation } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Link, Outlet, useLocation } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
 import Practice from './pages/Practice';
@@ -10,13 +10,30 @@ import './index.css';
 function Layout() {
   const location = useLocation();
 
+  React.useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
+
+  const [mousePos, setMousePos] = React.useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+
+  const handleMouseMove = (e) => {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
+
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
 
   return (
-    <div className="app-container">
+    <div 
+      className="app-container"
+      onMouseMove={handleMouseMove}
+      style={{
+        '--mouse-x': `${mousePos.x}px`,
+        '--mouse-y': `${mousePos.y}px`
+      }}
+    >
       <header className="navbar">
         <Link to="/" className="logo-link">
           <h1 className="hand-text" style={{ fontSize: '1.6rem' }}>L'Écho</h1>
@@ -42,19 +59,21 @@ function Layout() {
   );
 }
 
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <Layout />,
+    children: [
+      { index: true, element: <Dashboard /> },
+      { path: "library", element: <Library /> },
+      { path: "practice/:id", element: <Practice /> },
+      { path: "results/:jobId", element: <Results /> }
+    ]
+  }
+]);
+
 function App() {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="library" element={<Library />} />
-          <Route path="practice/:id" element={<Practice />} />
-          <Route path="results/:jobId" element={<Results />} />
-        </Route>
-      </Routes>
-    </Router>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;

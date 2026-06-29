@@ -25,7 +25,7 @@ export default function Dashboard() {
       <div className="dashboard-hero">
         <h2 className="dashboard-hero-title">Bienvenue</h2>
         <p className="dashboard-hero-sub">
-          {practices.length} practice sessions ready for you — pick one and begin ✎
+          {practices.length} practice sessions ready for you — pick one and begin
         </p>
       </div>
 
@@ -43,29 +43,39 @@ export default function Dashboard() {
       </div>
 
       {/* Practice cards */}
-      <div className="practice-grid">
+      <div className="practice-grid" key={activeLevel}>
         {filtered.map((practice, idx) => (
           <Link
             to={`/practice/${practice.id}`}
             key={practice.id}
+            viewTransition
             className="practice-card"
             style={{ animationDelay: `${idx * 0.06}s` }}
           >
             <div className="practice-card-header">
               <span
                 className="level-badge"
-                style={{ backgroundColor: levelColors[practice.level] }}
+                style={{ 
+                  backgroundColor: levelColors[practice.level],
+                  viewTransitionName: `level-${practice.id}`
+                }}
               >
                 {practice.level}
               </span>
-              <span className="practice-card-title">{practice.title}</span>
+              <span className="practice-card-title" style={{ viewTransitionName: `title-${practice.id}` }}>
+                {practice.title}
+              </span>
             </div>
             <p className="practice-card-transcript">
               {practice.transcript}
             </p>
             <div className="practice-card-meta">
-              <span className="meta-tag">{practice.length}</span>
-              <span className="meta-tag">{practice.speed}</span>
+              <span className="meta-tag" style={{ viewTransitionName: `length-${practice.id}` }}>
+                {practice.length}
+              </span>
+              <span className="meta-tag" style={{ viewTransitionName: `speed-${practice.id}` }}>
+                {practice.speed}
+              </span>
             </div>
           </Link>
         ))}
