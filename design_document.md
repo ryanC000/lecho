@@ -1,8 +1,10 @@
 # Product Requirement Document (PRD) & Design Specification
 
 **Product Name:** L'Écho
-**Version:** 1.0.0-PRD
+**Version:** 1.1.0-PRD (Revised — gaps resolved, phased against actual codebase)
 **Author:** Technical Product Manager & Lead UX/UI Designer
+
+**Revision Note (v1.1.0):** This revision resolves the three open questions from Section 8 of v1.0.0 and reconciles the PRD against the current state of the repository (see `implementation_plan.md` for the full audit and phased build-out). The biggest structural change: the PRD's target architecture (SQS/S3/Postgres/Terraform) is now explicitly framed as a **later phase**. The repository today is a local-first MVP (SQLite, in-process background tasks, local disk, a fully mocked worker), and the plan is to make that MVP *real* — real DSP, real audio persistence, real job status — before migrating to the AWS stack described in Section 4.
 
 ## 1. Overview & Objectives
 
@@ -46,14 +48,21 @@ Extracting fundamental pitch frequencies ($F_0$ curves), computing amplitude env
 *   The system must isolate the heavy computing task from the live web instance via an isolated background processing microservice.
 
 ### FR-3: Digital Signal Processing (DSP) & Signal Alignment
-*   The processing service must compute the fundamental frequency ($F_0$ contour) map and amplitude values of both audio sources.
-*   The system must apply a Dynamic Time Warping (DTW) mathematical alignment model to normalize the user's speaking rate to match the native speaker's timeline.
+*   The processing service must compute the fundamental frequency ($F_0$ contour) **and** the RMS amplitude (energy) envelope of both audio sources. Resolved — see Section 8.1: both signals are needed because prosody comprises pitch *and* emphasis/pause structure, and RMS is what lets the system flag missed liaisons or cut-short syllables that a pitch-only model would miss.
+*   **Speaker normalization (mandatory, precedes alignment):** Raw Hz and raw RMS are never compared directly, because they encode voice identity (a bass voice and a soprano voice can have identical *accent* while differing by an octave in absolute pitch; recording gain/mic distance changes absolute loudness independent of speech). Before DTW runs, both signals are converted to speaker-relative, unit-free representations:
+    *   **Pitch → semitones relative to the speaker's own median $F_0$:** `semitone_offset = 12 * log2(f0 / speaker_median_f0)`, computed independently for the native clip and the user clip, each using its own median as the zero point. This is the standard measure used in prosody research (it's how linguists compare intonation across speakers of different vocal range) and is invariant to absolute voice pitch.
+    *   **Energy → per-clip z-score:** `rms_z = (rms - clip_mean) / clip_std`, computed independently per clip. This makes the energy contour comparable regardless of recording volume, mic gain, or distance from the mic — only the *shape* of loudness over time (where it rises/falls) is scored.
+    *   Only after this normalization step does the system run DTW alignment and scoring. This directly targets "comparing accents, not voices."
+*   The system must apply a Dynamic Time Warping (DTW) mathematical alignment model to the normalized arrays to warp the user's speaking rate onto the native speaker's timeline.
 
 ### FR-4: Scoring & Insight Generation
-*   The system must output an absolute percentage matching score calculated by computing the Euclidean distance between the aligned pitch arrays.
-*   The system must isolate intervals where variance drops below an acceptable threshold and map these frames to specific timestamps to generate contextual improvement tips.
+*   The system must output an absolute percentage matching score calculated by computing the Euclidean distance between the aligned, **normalized** pitch and RMS arrays (weighted combination — default weighting 70% pitch / 30% energy, tunable; see `implementation_plan.md` Phase 1).
+*   The system must isolate intervals where variance drops below an acceptable threshold and map these frames to specific timestamps to generate contextual improvement tips (tags: `INTONATION_DROP`, `LIAISON_MISSED`, `SYLLABLE_STRETCH`, plus new `ENERGY_FLAT` / `EMPHASIS_MISSED` tags enabled by RMS analysis).
+*   Scope is strictly prosody (pitch, rhythm, cadence, emphasis). The system does **not** perform word-correctness checking — resolved, see Section 8.2.
 
 ## 4. Technical Architecture & Constraints
+
+**Phasing note:** the stack below is the **Phase 3 (cloud) target**, not the current state. The repository today runs a local-first MVP: SQLite instead of PostgreSQL, in-process FastAPI `BackgroundTasks` instead of SQS + a separate worker container, and local disk instead of S3. See `implementation_plan.md` for the phase-by-phase migration path and why local-first comes first (faster iteration on the DSP algorithm itself, no AWS spend, before paying the infra cost of the queue/object-store split).
 
 ### Tech Stack Specifications
 *   **Frontend Framework:** React (Single Page Application architecture).
@@ -92,12 +101,13 @@ CREATE TABLE analysis_segments (
     job_id UUID REFERENCES prosody_jobs(job_id) ON DELETE CASCADE,
     timestamp_start FLOAT NOT NULL,
     timestamp_end FLOAT NOT NULL,
-    native_pitch_values FLOAT[] NOT NULL,
-    user_pitch_values FLOAT[] NOT NULL,
-    feedback_tag VARCHAR(100), -- LIAISON_MISSED, INTONATION_DROP, SYLLABLE_STRETCH
-    explanation TEXT
+    feedback_tag VARCHAR(100), -- LIAISON_MISSED, INTONATION_DROP, SYLLABLE_STRETCH, ENERGY_FLAT, EMPHASIS_MISSED
+    explanation TEXT,
+    coordinates_path TEXT -- pointer to the raw aligned/normalized F0+RMS arrays (see note below)
 );
 ```
+
+**Schema note (reconciled with current code):** the full-resolution aligned pitch/RMS arrays are **not** stored as `FLOAT[]` columns in the row. A single 5–15 second clip at typical F0 frame rates produces thousands of points per array; storing that inline bloats the relational table and is expensive to query. Instead, each job's raw aligned+normalized arrays are dumped once as a JSON blob (locally: a file under `backend/storage/analysis/{job_id}.json` in Phase 1; on S3 under `archives/` in Phase 3), and `analysis_segments.coordinates_path` just points to it. This "hybrid archive" pattern is already what `worker/main.py`'s mock implementation assumes (`s3_coordinates_json_path`) — this PRD revision just makes it the documented schema instead of an implementation detail that silently diverged from the PRD.
 
 ### Constraints & Performance Thresholds
 *   **Gateway Response Limit:** The FastAPI backend must hand off the job to SQS and return the initial tracking state payload within < 50 milliseconds.
@@ -128,32 +138,4 @@ CREATE TABLE analysis_segments (
 ### 1. Excessive Background Ambient Noise
 *   **Scenario:** The user records their session in a crowded cafe, introducing high ambient noise that prevents the pitch tracking algorithm from extracting a clear $F_0$ fundamental frequency line.
 *   **System Behavior (The DSP Pipeline):** Rather than dropping the execution block, the containerized Python background worker routes both the User Recording (Source) and the Native Clip (Reference) through an automated three-stage digital signal processing pipeline before performing the alignment math:
-    *   **Bandpass Filtering (SciPy):** The worker applies a 4th-order Butterworth bandpass filter (`scipy.signal.butter`) to both audio tracks. The filter cuts off all frequencies below $80\text{ Hz}$ (eliminating subsonic traffic rumble and AC hums) and all frequencies above $4000\text{ Hz}$ (eliminating high-frequency electronic hiss), isolating the core human vocal spectrum.
-    *   **Spectral Subtraction (Noise Profiling):** Using the `noisereduce` library, the worker samples the initial 300ms silent buffer of the user's recording to profile the stationary ambient noise floor. This spectral signature is mathematically subtracted across the Fast Fourier Transform (FFT) matrix of the entire sample, cleanly isolating the voice.
-    *   **Signal-to-Noise Ratio (SNR) Verification:** Following sanitization, the worker calculates the final Signal-to-Noise Ratio and pitch tracking confidence interval.
-
-### 2. Radical Execution Time Deviation
-*   **Scenario:** The user speaks incredibly slow, causing a 3-second native phrase to stretch across a 14-second recording window.
-*   **System Behavior:** The DTW matrix calculation checks if the length ratio between the two arrays exceeds a $3:1$ scale. If it does, the mathematical alignment drops early before throwing memory leaks. The database flags this error, and the user interface outputs: "Your recording duration differs significantly from the target clip. Try keeping your pace closer to the native speaker's speed."
-
-### 3. Sudden Network Disconnection Post-Upload
-*   **Scenario:** The client internet cuts out exactly as the recording finishes uploading, meaning the frontend misses the live confirmation state update.
-*   **System Behavior:** Because state is safely saved inside PostgreSQL, when the client's network recovers and reconnects, the application executes a structural status synchronization query on mounting. The user's dashboard seamlessly reflects the processing job's latest real-time status.
-
-## 7. Success Metrics & KPIs
-
-### System Performance KPIs
-*   **Queue Latency Time:** The average duration a job sits inside AWS SQS before a container worker pulls it down for execution (Target: < 1.5 seconds under typical load profiles).
-*   **Total Processing Cycle:** The wall-clock time from when a user clicks submit to the final visibility of the analysis graph (Target: < 12 seconds for a standard 5-second speech snippet).
-
-### User Experience KPIs
-*   **Stickiness / Return Rate:** The percentage of users who return to practice the exact same sentence structure within a 48-hour window, proving they are actively engaging with the corrective feedback loop.
-*   **Acoustic Metric Progression:** The statistical increase in the overall alignment match score for an individual user after practicing a single sentence 5 or more times.
-
-## 8. TPM & Architectural Clarification Check (Gaps to Resolve)
-
-Before moving this PRD directly into an engineering sprint, we need to clarify three key technical boundaries:
-
-1.  **The Choice of Signal Comparison Depth:** Should the background worker analyze Pitch/Intonation ($F_0$) alone, or should we also measure Energy/Volume ($RMS$ amplitude)? Measuring energy captures syllable emphasis and structural pauses, which adds depth to the feedback but increases the algorithmic complexity of the worker container.
-2.  **Linguistic Scope Control:** Are we strictly evaluating prosody (the cadence, rhythm, and melody), or do we want the worker to flag instances where the user says the completely wrong word? If we want to check for literal word errors, we would need to add an explicit Speech-to-Text alignment step (like Whisper) before running the DTW pitch analysis.
-3.  **The Multi-User Scaling Budget:** Under a heavy testing environment (e.g., a whole class of language students submitting responses simultaneously), how do you want the worker cluster to handle scaling? We can write Terraform rules to autoscale our EC2 container fleet based on the SQS queue depth, but we need to set a maximum instance cap to keep your AWS billing safe.
+    *   **Bandpass Filtering (SciPy):** The worker applies a 4th-order Butterworth bandpass filter (`scipy.signal.butter`) to both audio
