@@ -10,6 +10,8 @@ from database import engine
 
 from typing import List
 
+# Creates all the API endpoints 
+
 # Create tables (for local MVP)
 models.Base.metadata.create_all(bind=engine)
 

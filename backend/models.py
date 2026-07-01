@@ -4,6 +4,8 @@ from sqlalchemy.sql import func
 from database import Base
 import uuid
 
+# All tables required for the project
+
 class User(Base):
     __tablename__ = "users"
 

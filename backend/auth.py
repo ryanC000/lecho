@@ -8,6 +8,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import database, models
 
+# Custom login and register logic
+
 # Replace with env variables in production
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey_for_lecho_mvp")
 ALGORITHM = "HS256"

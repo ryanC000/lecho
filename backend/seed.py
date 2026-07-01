@@ -3,6 +3,8 @@ import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+# Temporary script that populates the database with some data before the local database is setup
+
 # Ensure we can import from backend
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 

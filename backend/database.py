@@ -2,6 +2,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+# Setting up database
+
 # For local development we'll use SQLite by default
 SQLALCHEMY_DATABASE_URL = "sqlite:///./lecho.db"
 

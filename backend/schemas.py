@@ -2,6 +2,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
+# File for pydantic to validate all data transferred to and from backend
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
