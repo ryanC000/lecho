@@ -103,3 +103,5 @@ This is what the repository does today, verified against the code (not assumed).
 - **Autoscaling cap of 5 instances (Phase 3):** a placeholder default, not derived from real load data. Revisit once Phase 1/2 shows actual concurrent-submission patterns.
 - **JWT storage strategy (Phase 1.3):** `localStorage` is the pragmatic default called out above; if this product ever handles more sensitive data, revisit in favor of httpOnly cookies + CSRF protection.
 - **Native audio sourcing (Phase 2):** how real reference clips get produced/licensed is unresolved and blocks any meaningful DSP validation — flagged, not decided, in this plan.
+
+https://www.homepages.ucl.ac.uk/~uclyyix/ProsodyPro/

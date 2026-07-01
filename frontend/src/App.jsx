@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
 import Practice from './pages/Practice';
 import Results from './pages/Results';
+import AuthModal from './components/AuthModal';
 import './index.css';
 
 // Global Layout Wrapper
@@ -11,6 +12,11 @@ function Layout() {
   const location = useLocation();
 
   const [mousePos, setMousePos] = React.useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+
+  // Auth modal state (mockup — not yet backed by a real auth system).
+  const [auth, setAuth] = React.useState({ open: false, mode: 'login' });
+  const openAuth = (mode) => setAuth({ open: true, mode });
+  const closeAuth = () => setAuth((a) => ({ ...a, open: false }));
 
   const handleMouseMove = (e) => {
     setMousePos({ x: e.clientX, y: e.clientY });
@@ -45,13 +51,27 @@ function Layout() {
             Settings
           </Link>
         </div>
-        <div className="user-profile">E</div>
+        <div className="auth-actions">
+          <button className="auth-signin-btn" onClick={() => openAuth('login')}>
+            Log in
+          </button>
+          <button className="btn-primary auth-signup-btn" onClick={() => openAuth('register')}>
+            Sign up
+          </button>
+        </div>
       </header>
 
       <main className="content">
         <ScrollRestoration />
         <Outlet />
       </main>
+
+      <AuthModal
+        open={auth.open}
+        mode={auth.mode}
+        onClose={closeAuth}
+        onSwitchMode={(mode) => setAuth({ open: true, mode })}
+      />
     </div>
   );
 }

@@ -180,6 +180,192 @@
     @apply scale-103;
   }
 
+  /* ── Navbar auth buttons ── */
+  .auth-actions {
+    @apply flex items-center gap-2;
+  }
+
+  .auth-signin-btn {
+    @apply text-sm font-medium px-4 py-2 rounded-full cursor-pointer transition-all duration-200;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--color-ink-light);
+  }
+
+  .auth-signin-btn:hover {
+    color: var(--color-ink);
+    background: var(--color-card);
+    border-color: var(--color-cream-border);
+    @apply translate-y-0;
+    box-shadow: none;
+  }
+
+  .auth-signup-btn {
+    @apply px-4 py-2;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     AUTH MODAL (login / register popup)
+     ═══════════════════════════════════════════════════ */
+
+  .auth-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background: rgba(59, 49, 39, 0.32);
+    backdrop-filter: blur(4px);
+    animation: authOverlayIn 0.2s ease forwards;
+  }
+
+  .auth-modal {
+    background: var(--color-paper-light);
+    border: 1px solid var(--color-cream-border);
+    @apply relative w-full max-w-[400px] rounded-2xl p-8;
+    box-shadow: 0 20px 60px rgba(59, 49, 39, 0.22);
+    animation: authModalIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+
+  .auth-close {
+    @apply absolute top-4 right-4 flex items-center justify-center w-8 h-8 rounded-full cursor-pointer transition-all duration-200 p-0;
+    font-size: 1.4rem;
+    line-height: 1;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-light);
+  }
+
+  .auth-close:hover {
+    background: var(--color-paper-dark);
+    color: var(--color-ink);
+    @apply translate-y-0;
+    box-shadow: none;
+  }
+
+  .auth-header {
+    @apply text-center mb-6;
+  }
+
+  .auth-title {
+    font-family: var(--font-serif);
+    @apply text-3xl mb-1;
+    color: var(--color-ink);
+    font-weight: normal;
+  }
+
+  .auth-sub {
+    font-family: var(--font-hand);
+    @apply text-sm;
+    color: var(--color-ink-light);
+  }
+
+  .auth-form {
+    @apply flex flex-col gap-4;
+  }
+
+  .auth-field {
+    @apply flex flex-col gap-1.5;
+  }
+
+  .auth-field > span {
+    font-family: var(--font-hand);
+    @apply text-xs uppercase tracking-wide;
+    color: var(--color-ink-light);
+  }
+
+  .auth-field input {
+    @apply w-full rounded-xl px-4 py-2.5 text-sm transition-all duration-200;
+    background: var(--color-card);
+    border: 1px solid var(--color-cream-border);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  .auth-field input::placeholder {
+    color: var(--color-ink-faint);
+  }
+
+  .auth-field input:focus {
+    outline: none;
+    border-color: var(--color-accent-warm);
+    background: var(--color-paper-light);
+    box-shadow: 0 0 0 3px rgba(199, 90, 58, 0.1);
+  }
+
+  .auth-forgot {
+    @apply self-end;
+  }
+
+  .auth-submit {
+    @apply w-full justify-center mt-1;
+  }
+
+  .auth-divider {
+    @apply flex items-center gap-3 my-5;
+    color: var(--color-ink-faint);
+  }
+
+  .auth-divider::before,
+  .auth-divider::after {
+    content: '';
+    @apply flex-1 h-px;
+    background: var(--color-cream-border);
+  }
+
+  .auth-divider span {
+    font-family: var(--font-hand);
+    @apply text-xs uppercase tracking-wide;
+  }
+
+  .auth-google {
+    @apply w-full justify-center;
+    background: var(--color-card);
+    border: 1px solid var(--color-cream-border);
+    color: var(--color-ink);
+  }
+
+  .auth-google:hover {
+    background: var(--color-card-hover);
+  }
+
+  .auth-google-icon {
+    @apply w-4 h-4;
+  }
+
+  .auth-switch {
+    @apply text-center text-sm mt-6;
+    color: var(--color-ink-light);
+    font-family: var(--font-sans);
+  }
+
+  .auth-link {
+    @apply p-0 text-sm font-medium cursor-pointer transition-colors duration-200;
+    background: transparent;
+    border: none;
+    color: var(--color-accent-warm);
+    font-family: var(--font-sans);
+  }
+
+  .auth-link:hover {
+    color: var(--color-accent-warm-hover);
+    background: transparent;
+    @apply translate-y-0;
+    box-shadow: none;
+  }
+
+  @keyframes authOverlayIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes authModalIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
   /* ── Content area ── */
   .content {
     @apply max-w-[800px] mx-auto mt-12 mb-12 px-6 w-full;
