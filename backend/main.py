@@ -8,6 +8,8 @@ import time
 import models, schemas, auth, database
 from database import engine
 
+from typing import List
+
 # Create tables (for local MVP)
 models.Base.metadata.create_all(bind=engine)
 
@@ -21,6 +23,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/practices", response_model=List[schemas.Practice])
+def get_practices(db: Session = Depends(database.get_db)):
+    practices = db.query(models.Practice).all()
+    return practices
+
+@app.get("/practices/{practice_id}", response_model=schemas.Practice)
+def get_practice(practice_id: int, db: Session = Depends(database.get_db)):
+    practice = db.query(models.Practice).filter(models.Practice.id == practice_id).first()
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    return practice
 
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
@@ -67,9 +81,9 @@ def mock_worker_task(job_id: str):
 @app.post("/jobs", response_model=schemas.JobResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_job(job_req: schemas.JobCreate, background_tasks: BackgroundTasks, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
     # Verify the native sample exists
-    sample = db.query(models.NativeSample).filter(models.NativeSample.id == job_req.native_sample_id).first()
+    sample = db.query(models.Practice).filter(models.Practice.id == job_req.practice_id).first()
     if not sample:
-        raise HTTPException(status_code=404, detail="Native sample not found")
+        raise HTTPException(status_code=404, detail="Practice not found")
         
     # Backend validation (redundant with frontend): +/- 20% duration check
     lower_bound = sample.duration * 0.8
@@ -80,7 +94,7 @@ def create_job(job_req: schemas.JobCreate, background_tasks: BackgroundTasks, db
     # Generate a unique Job ID and save it
     new_job = models.ProsodyJob(
         user_id=current_user.id,
-        native_sample_id=sample.id,
+        practice_id=sample.id,
         user_s3_path="mock-s3-upload-path/audio.wav" # Mocking S3 pre-signed URL
     )
     db.add(new_job)

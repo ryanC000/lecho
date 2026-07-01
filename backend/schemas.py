@@ -19,19 +19,24 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
-class NativeSampleResponse(BaseModel):
-    id: int
-    s3_path: str
+class PracticeBase(BaseModel):
+    title: str
     transcript: str
-    linguistic_notes: Optional[str] = None
-    difficulty_level: Optional[str] = None
+    level: str
+    length: str
+    speed: str
     duration: float
+    audio_url: Optional[str] = None
+    video_url: Optional[str] = None
+    notes: Optional[str] = None
 
+class Practice(PracticeBase):
+    id: int
     class Config:
         orm_mode = True
 
 class JobCreate(BaseModel):
-    native_sample_id: int
+    practice_id: int
     user_audio_duration: float
 
 class JobResponse(BaseModel):

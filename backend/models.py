@@ -22,24 +22,28 @@ class RevokedToken(Base):
     jti = Column(String, unique=True, index=True, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
-class NativeSample(Base):
-    __tablename__ = "native_samples"
+class Practice(Base):
+    __tablename__ = "practices"
 
     id = Column(Integer, primary_key=True, index=True)
-    s3_path = Column(String, nullable=False)
+    title = Column(String, nullable=False)
     transcript = Column(String, nullable=False)
-    linguistic_notes = Column(String)
-    difficulty_level = Column(String)
+    level = Column(String, nullable=False)
+    length = Column(String, nullable=False)
+    speed = Column(String, nullable=False)
     duration = Column(Float, nullable=False)
+    audio_url = Column(String, nullable=True)
+    video_url = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
 
-    jobs = relationship("ProsodyJob", back_populates="native_sample")
+    jobs = relationship("ProsodyJob", back_populates="practice")
 
 class ProsodyJob(Base):
     __tablename__ = "prosody_jobs"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(Integer, ForeignKey("users.id"))
-    native_sample_id = Column(Integer, ForeignKey("native_samples.id"))
+    practice_id = Column(Integer, ForeignKey("practices.id"))
     status = Column(String, default="PENDING")
     user_s3_path = Column(String, nullable=False)
     overall_match_score = Column(Float)
@@ -47,7 +51,7 @@ class ProsodyJob(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     owner = relationship("User", back_populates="jobs")
-    native_sample = relationship("NativeSample", back_populates="jobs")
+    practice = relationship("Practice", back_populates="jobs")
     segments = relationship("AnalysisSegment", back_populates="job")
 
 class AnalysisSegment(Base):
