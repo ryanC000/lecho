@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { blobToWav } from '../utils/audio';
 
 // For simplicity, passing the native duration down as a prop
 export default function Recorder({ nativeDuration, onUpload }) {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   
   const mediaRecorderRef = useRef(null);
@@ -68,30 +70,45 @@ export default function Recorder({ nativeDuration, onUpload }) {
     }
   };
 
-  const handleStopRecording = () => {
-    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-    const durationInSeconds = recordingTime; // approximate
+  const handleStopRecording = async () => {
+    // MediaRecorder gives us WebM/Opus (or mp4 on Safari), NOT wav — transcode
+    // to real PCM WAV so the backend can read it, and get the precise duration.
+    const recordedBlob = new Blob(audioChunksRef.current, {
+      type: mediaRecorderRef.current?.mimeType || 'audio/webm',
+    });
 
-    // Validation 2: +/- 20% rule
-    if (nativeDuration) {
-      const lowerBound = nativeDuration * 0.8;
-      const upperBound = nativeDuration * 1.2;
-      
-      if (durationInSeconds < lowerBound || durationInSeconds > upperBound) {
-        setError(`Recording duration (${durationInSeconds}s) must be within ±20% of native sample (${nativeDuration}s).`);
-        return;
+    setIsProcessing(true);
+    try {
+      const { blob: wavBlob, duration } = await blobToWav(recordedBlob);
+      const durationInSeconds = Number(duration.toFixed(2));
+
+      // Validation: ±20% of native duration (mirrors the backend gate).
+      if (nativeDuration) {
+        const lowerBound = nativeDuration * 0.8;
+        const upperBound = nativeDuration * 1.2;
+        if (durationInSeconds < lowerBound || durationInSeconds > upperBound) {
+          setError(`Recording duration (${durationInSeconds}s) must be within ±20% of native sample (${nativeDuration}s).`);
+          return;
+        }
       }
+
+      onUpload(wavBlob, durationInSeconds);
+    } catch (err) {
+      setError('Could not process the recording. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
-    
-    // Pass valid audio blob to parent
-    onUpload(audioBlob, durationInSeconds);
   };
 
   return (
     <div className="recorder-container">
       <h3>Record your version 🎙</h3>
       <div className="controls">
-        {!isRecording ? (
+        {isProcessing ? (
+          <button className="btn-primary" disabled>
+            Processing…
+          </button>
+        ) : !isRecording ? (
           <button className="btn-primary" onClick={startRecording}>
             Start Recording
           </button>

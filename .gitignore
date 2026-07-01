@@ -46,6 +46,9 @@ dist-ssr/
 *.db
 *.sqlite3
 
+# Stored audio uploads / analysis archives (local storage seam)
+backend/storage/
+
 # OS
 .DS_Store
 Thumbs.db

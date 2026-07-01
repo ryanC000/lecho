@@ -5,6 +5,7 @@ import Library from './pages/Library';
 import Practice from './pages/Practice';
 import Results from './pages/Results';
 import AuthModal from './components/AuthModal';
+import { isLoggedIn, clearToken } from './utils/auth';
 import './index.css';
 
 // Global Layout Wrapper
@@ -13,10 +14,22 @@ function Layout() {
 
   const [mousePos, setMousePos] = React.useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
 
-  // Auth modal state (mockup — not yet backed by a real auth system).
+  // Auth modal state.
   const [auth, setAuth] = React.useState({ open: false, mode: 'login' });
   const openAuth = (mode) => setAuth({ open: true, mode });
   const closeAuth = () => setAuth((a) => ({ ...a, open: false }));
+
+  // Track login state; utils/auth dispatches 'lecho-auth-changed' on login/logout.
+  const [loggedIn, setLoggedIn] = React.useState(isLoggedIn());
+  React.useEffect(() => {
+    const sync = () => setLoggedIn(isLoggedIn());
+    window.addEventListener('lecho-auth-changed', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('lecho-auth-changed', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
 
   const handleMouseMove = (e) => {
     setMousePos({ x: e.clientX, y: e.clientY });
@@ -52,12 +65,20 @@ function Layout() {
           </Link>
         </div>
         <div className="auth-actions">
-          <button className="auth-signin-btn" onClick={() => openAuth('login')}>
-            Log in
-          </button>
-          <button className="btn-primary auth-signup-btn" onClick={() => openAuth('register')}>
-            Sign up
-          </button>
+          {loggedIn ? (
+            <button className="auth-signin-btn" onClick={() => clearToken()}>
+              Log out
+            </button>
+          ) : (
+            <>
+              <button className="auth-signin-btn" onClick={() => openAuth('login')}>
+                Log in
+              </button>
+              <button className="btn-primary auth-signup-btn" onClick={() => openAuth('register')}>
+                Sign up
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -96,10 +117,11 @@ const router = createBrowserRouter([
         element: <Practice />,
         loader: async ({ params }) => fetch(`http://localhost:8000/practices/${params.id}`).then(r => r.json())
       },
-      { 
-        path: "results/:jobId", 
-        element: <Results />,
-        loader: async ({ params }) => fetch(`http://localhost:8000/practices/${params.jobId}`).then(r => r.json())
+      {
+        // No loader: the job is genuinely async, so Results fetches GET /jobs/:jobId
+        // itself and polls until the worker finishes.
+        path: "results/:jobId",
+        element: <Results />
       }
     ]
   }

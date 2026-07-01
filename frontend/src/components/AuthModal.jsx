@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from 'react';
+import { login, register } from '../utils/auth';
 
 /**
- * AuthModal — mockup login / register popup.
- *
- * Purely presentational for now: it does not talk to any backend. When we
- * decide between a custom auth system and something like Firebase, the
- * `handleSubmit` / `handleGoogle` stubs below are the only places that need
- * to be wired up.
+ * AuthModal — real login / register popup, wired to the FastAPI backend.
+ * On success it stores the JWT (via utils/auth) and closes.
  */
 export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const isRegister = mode === 'register';
 
   // Reset fields whenever the modal opens or the mode changes.
   useEffect(() => {
-    if (open) setForm({ name: '', email: '', password: '', confirm: '' });
+    if (open) {
+      setForm({ name: '', email: '', password: '', confirm: '' });
+      setError(null);
+    }
   }, [open, mode]);
 
   // Close on Escape.
@@ -30,11 +32,28 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: hook up to real auth (custom backend or Firebase).
-    console.log(`[mockup] ${mode} submitted`, form);
-    onClose();
+    setError(null);
+
+    if (isRegister && form.password !== form.confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (isRegister) {
+        // Register, then immediately log in to obtain a token.
+        await register(form.email, form.password);
+      }
+      await login(form.email, form.password);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleGoogle = () => {
@@ -123,8 +142,10 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
             </button>
           )}
 
-          <button type="submit" className="btn-primary auth-submit">
-            {isRegister ? 'Create account' : 'Log in'}
+          {error && <div className="alert-error">{error}</div>}
+
+          <button type="submit" className="btn-primary auth-submit" disabled={submitting}>
+            {submitting ? 'Please wait…' : isRegister ? 'Create account' : 'Log in'}
           </button>
         </form>
 

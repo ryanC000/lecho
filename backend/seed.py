@@ -10,6 +10,11 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database import Base, SQLALCHEMY_DATABASE_URL
 from models import Practice, User
+import auth
+
+# Dev login credentials (documented so the seeded account can actually log in).
+DEV_EMAIL = "test@example.com"
+DEV_PASSWORD = "password123"
 
 # Delete the old SQLite DB if it exists to ensure a clean slate
 if os.path.exists("./lecho.db"):
@@ -84,10 +89,11 @@ for practice_data in initial_practices:
     practice = Practice(**practice_data)
     db.add(practice)
 
-# Seed a default user for testing auth
-user = User(email="test@example.com", password_hash="dummy_hash")
+# Seed a default user for testing auth (real bcrypt hash so it can actually log in).
+user = User(email=DEV_EMAIL, password_hash=auth.get_password_hash(DEV_PASSWORD))
 db.add(user)
 
 db.commit()
 db.close()
 print("Database seeded successfully with new schemas!")
+print(f"Dev login: {DEV_EMAIL} / {DEV_PASSWORD}")

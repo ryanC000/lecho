@@ -37,6 +37,9 @@ class Practice(PracticeBase):
     class Config:
         orm_mode = True
 
+# NOTE: job creation is now a multipart/form-data upload (file + practice_id +
+# user_audio_duration), so those fields are declared as Form(...) params on the
+# endpoint rather than a JSON body model. JobCreate is kept for documentation.
 class JobCreate(BaseModel):
     practice_id: int
     user_audio_duration: float
@@ -44,7 +47,27 @@ class JobCreate(BaseModel):
 class JobResponse(BaseModel):
     id: str
     status: str
-    user_s3_path: str # The pre-signed URL or path the frontend should upload to
-    
+
+    class Config:
+        orm_mode = True
+
+class SegmentResponse(BaseModel):
+    timestamp_start: float
+    timestamp_end: float
+    feedback_tag: Optional[str] = None
+    explanation: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+class JobStatusResponse(BaseModel):
+    id: str
+    status: str
+    score: Optional[float] = None
+    error_message: Optional[str] = None
+    practice_id: Optional[int] = None
+    transcript: Optional[str] = None
+    segments: List[SegmentResponse] = []
+
     class Config:
         orm_mode = True

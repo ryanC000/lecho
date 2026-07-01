@@ -4,6 +4,7 @@ import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
 import { generateMockAudioBlob } from '../utils/audio';
+import { apiFetch, isLoggedIn } from '../utils/auth';
 
 const levelColors = {
   A1: 'var(--color-level-a1)',
@@ -19,6 +20,7 @@ export default function Practice() {
   const practice = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
   const [nativeAudioUrl, setNativeAudioUrl] = useState(null);
+  const [uploadError, setUploadError] = useState(null);
 
   useEffect(() => {
     if (!practice) return;
@@ -37,13 +39,36 @@ export default function Practice() {
     };
   }, [practice]);
 
-  const handleUpload = (audioBlob, duration) => {
+  const handleUpload = async (audioBlob, duration) => {
+    setUploadError(null);
+
+    // Local playback of what we recorded.
     const url = URL.createObjectURL(audioBlob);
     setUserAudioUrl(url);
-    console.log('Mock Uploading...', duration);
-    setTimeout(() => {
-      navigate(`/results/${practice.id}`);
-    }, 1500);
+
+    if (!isLoggedIn()) {
+      setUploadError('Please log in before submitting a recording.');
+      return;
+    }
+
+    // Real multipart upload to POST /jobs.
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.wav');
+    formData.append('practice_id', String(practice.id));
+    formData.append('user_audio_duration', String(duration));
+
+    try {
+      const res = await apiFetch('/jobs', { method: 'POST', body: formData });
+      const job = await res.json();
+      // Navigate using the REAL job id returned by the backend.
+      navigate(`/results/${job.id}`);
+    } catch (err) {
+      setUploadError(
+        err.status === 401
+          ? 'Your session expired. Please log in again.'
+          : `Upload failed: ${err.message}`
+      );
+    }
   };
 
   return (
@@ -124,6 +149,7 @@ export default function Practice() {
       {/* ── Recording ── */}
       <section className="flat-section">
         <Recorder nativeDuration={practice.duration} onUpload={handleUpload} />
+        {uploadError && <div className="alert-error">{uploadError}</div>}
         {userAudioUrl && (
           <div className="playback">
             <h4 className="hand-text text-lg mb-2" style={{ color: 'var(--color-ink-light)' }}>
