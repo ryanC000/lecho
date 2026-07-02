@@ -553,6 +553,84 @@
   }
 
   /* ═══════════════════════════════════════════════════
+     RECORDER + LIVE WAVEFORM
+     ═══════════════════════════════════════════════════ */
+
+  .recorder-container {
+    @apply flex flex-col gap-4;
+  }
+
+  .controls {
+    @apply flex items-center gap-3;
+  }
+
+  /* ── Recording status: pulsing indicator + prominent timer ── */
+  .recording-status {
+    @apply flex items-center justify-between rounded-2xl px-5 py-3;
+    background: var(--color-card);
+    border: 1px solid var(--color-cream-border);
+    animation: fadeInDown 0.3s ease forwards;
+  }
+
+  .recording-indicator {
+    @apply flex items-center gap-2.5;
+  }
+
+  .rec-dot {
+    @apply w-3 h-3 rounded-full inline-block;
+    background: var(--color-ink-faint);
+  }
+
+  .recording-status.is-recording .rec-dot {
+    background: var(--color-accent-warm);
+    animation: recPulse 1.2s ease-in-out infinite;
+  }
+
+  .rec-label {
+    font-family: var(--font-hand);
+    @apply text-sm uppercase tracking-wide;
+    color: var(--color-ink-light);
+  }
+
+  .recording-timer {
+    font-family: var(--font-hand);
+    @apply text-3xl font-bold tabular-nums;
+    color: var(--color-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .recording-status.is-recording .recording-timer {
+    color: var(--color-accent-warm);
+  }
+
+  @keyframes recPulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(199, 90, 58, 0.4);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.15);
+      box-shadow: 0 0 0 6px rgba(199, 90, 58, 0);
+    }
+  }
+
+  /* ── Live reactive sound wave (canvas) ── */
+  .live-waveform-container {
+    background: var(--color-card);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--color-cream-border);
+    @apply w-full rounded-2xl p-4;
+    animation: fadeInDown 0.3s ease forwards;
+  }
+
+  .live-waveform {
+    @apply block w-full;
+    height: 96px;
+  }
+
+  /* ═══════════════════════════════════════════════════
      SPEED CONTROL
      ═══════════════════════════════════════════════════ */
 

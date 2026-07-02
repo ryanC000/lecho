@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { blobToWav } from '../utils/audio';
+import LiveWaveform from './LiveWaveform';
 
 // For simplicity, passing the native duration down as a prop
 export default function Recorder({ nativeDuration, onUpload }) {
@@ -7,21 +8,26 @@ export default function Recorder({ nativeDuration, onUpload }) {
   const [error, setError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  
+  // Exposed to the live waveform so it can read the mic signal in real time.
+  const [analyser, setAnalyser] = useState(null);
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const analyserRef = useRef(null);
   const audioContextRef = useRef(null);
+  const streamRef = useRef(null);
   const timerRef = useRef(null);
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       analyserRef.current = audioContextRef.current.createAnalyser();
       const source = audioContextRef.current.createMediaStreamSource(stream);
       source.connect(analyserRef.current);
-      analyserRef.current.fftSize = 256;
+      analyserRef.current.fftSize = 1024;
+      setAnalyser(analyserRef.current);
 
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -38,10 +44,14 @@ export default function Recorder({ nativeDuration, onUpload }) {
       setError(null);
       setRecordingTime(0);
 
-      // Simple timer
+      // Simple timer. We compute the elapsed seconds here and hand it to
+      // checkSilence so it isn't reading a stale value from the closure.
       timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-        checkSilence();
+        setRecordingTime((prev) => {
+          const next = prev + 1;
+          checkSilence(next);
+          return next;
+        });
       }, 1000);
 
     } catch (err) {
@@ -49,16 +59,18 @@ export default function Recorder({ nativeDuration, onUpload }) {
     }
   };
 
-  const checkSilence = () => {
+  const checkSilence = (elapsedSeconds) => {
     if (!analyserRef.current) return;
-    const bufferLength = analyserRef.current.frequencyBinCount;
+    const bufferLength = analyserRef.current.fftSize;
     const dataArray = new Uint8Array(bufferLength);
     analyserRef.current.getByteTimeDomainData(dataArray);
 
-    // Simple heuristic: if all values are ~128 (silence in 8-bit PCM), it's silent
-    const isSilent = dataArray.every(val => val === 128);
-    if (isSilent && recordingTime > 2) {
-       setError("We aren't detecting any audio. It seems like your mic is not working.");
+    // Real mic silence sits *near* 128 (with a little noise), not exactly at it.
+    // Treat the signal as silent if every sample stays within a small threshold.
+    const SILENCE_THRESHOLD = 2; // out of 128
+    const isSilent = dataArray.every((val) => Math.abs(val - 128) <= SILENCE_THRESHOLD);
+    if (isSilent && elapsedSeconds > 2) {
+      setError("We aren't detecting any audio. It seems like your mic is not working.");
     }
   };
 
@@ -68,6 +80,27 @@ export default function Recorder({ nativeDuration, onUpload }) {
       setIsRecording(false);
       clearInterval(timerRef.current);
     }
+  };
+
+  // Release the microphone and tear down the audio graph once we're done with it.
+  const releaseMic = () => {
+    setAnalyser(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+    }
+    audioContextRef.current = null;
+    analyserRef.current = null;
+  };
+
+  // Format seconds as m:ss for the on-page timer.
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
   const handleStopRecording = async () => {
@@ -97,12 +130,37 @@ export default function Recorder({ nativeDuration, onUpload }) {
       setError('Could not process the recording. Please try again.');
     } finally {
       setIsProcessing(false);
+      releaseMic();
     }
   };
+
+  // Make sure the mic is released if the component unmounts mid-recording.
+  useEffect(() => {
+    return () => {
+      clearInterval(timerRef.current);
+      releaseMic();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="recorder-container">
       <h3>Record your version 🎙</h3>
+
+      {/* On-page recording status: pulsing indicator + prominent timer */}
+      {(isRecording || recordingTime > 0) && (
+        <div className={`recording-status${isRecording ? ' is-recording' : ''}`}>
+          <div className="recording-indicator">
+            <span className="rec-dot" />
+            <span className="rec-label">{isRecording ? 'Recording' : 'Recorded'}</span>
+          </div>
+          <span className="recording-timer">{formatTime(recordingTime)}</span>
+        </div>
+      )}
+
+      {/* Live reactive sound wave — visible feedback that the mic is picking up audio */}
+      {isRecording && <LiveWaveform analyser={analyser} active={isRecording} />}
+
       <div className="controls">
         {isProcessing ? (
           <button className="btn-primary" disabled>
@@ -114,7 +172,7 @@ export default function Recorder({ nativeDuration, onUpload }) {
           </button>
         ) : (
           <button className="btn-danger" onClick={stopRecording}>
-            Stop Recording ({recordingTime}s)
+            Stop Recording
           </button>
         )}
       </div>
