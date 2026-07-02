@@ -9,8 +9,6 @@ Decisions this plan assumes (from PRD v1.1.0, Section 8): F0 + RMS, both speaker
 
 ## Part 1 — Current State Audit
 
-This is what the repository does today, verified against the code (not assumed).
-
 ### What actually works end-to-end
 - **Practice catalog:** `GET /practices`, `GET /practices/{id}` (backend/main.py) backed by real SQLite rows, seeded via `backend/seed.py`. Dashboard and Library pages fetch this via React Router loaders (`frontend/src/App.jsx`) and render real data.
 - **Auth (backend only):** `POST /auth/register`, `POST /auth/login` are real — bcrypt password hashing (`auth.py`), JWT issuance with a `jti` claim and a `revoked_tokens` table for future logout support.
