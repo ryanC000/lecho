@@ -67,13 +67,17 @@ export default function Results() {
   }
 
   if (job.status === 'FAILED') {
+    // Only offer "Try Again" when re-recording could actually help. Some
+    // failures (e.g. a practice with no reference audio yet) aren't the
+    // user's fault and won't change on a retry.
+    const canRetry = job.retryable !== false;
     return (
       <div className="workspace page-enter">
         <div className="alert-error">
-          We couldn't analyze this recording{job.error_message ? `: ${job.error_message}` : '.'}
+          {job.error_message || "We couldn't analyze this recording."}
         </div>
         <div className="results-actions">
-          {job.practice_id && (
+          {canRetry && job.practice_id && (
             <Link to={`/practice/${job.practice_id}`}>
               <button className="btn-primary">Try Again</button>
             </Link>

@@ -60,6 +60,24 @@ def get_path(key: str) -> Path:
     return STORAGE_ROOT / key
 
 
+def save_text(text: str, key: str) -> str:
+    """Persist a text blob (e.g. the analysis archive JSON) at `key`.
+
+    Behind the same seam as audio so the Phase 3 S3 swap is one file. Returns
+    the key so callers can store it on the row that references it.
+    """
+    dest = STORAGE_ROOT / key
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8")
+    return key
+
+
+def analysis_key(job_id: str) -> str:
+    """Canonical key for a job's coordinate archive (served later by the
+    visualizer's GET /jobs/{id}/coordinates endpoint — worker_plan.md §3)."""
+    return f"analysis/{job_id}.json"
+
+
 def delete(key: str) -> None:
     path = STORAGE_ROOT / key
     if path.exists():

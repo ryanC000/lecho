@@ -3,10 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
-import time
+import json
 import uuid
 
-import models, schemas, auth, database, storage, audio_meta
+import models, schemas, auth, database, storage, audio_meta, dsp
 from database import engine
 
 from typing import List
@@ -74,40 +74,83 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-# --- Worker Task ---
-# NOTE: this still fabricates the score (real F0/RMS/DTW is Plan Phase 1.2). But
-# the pipeline is now genuinely end-to-end: it opens the *real* stored file and
-# fails the job loudly if it's missing/unreadable, instead of blindly returning
-# a constant. Swapping in real DSP is a one-function change here.
+# --- Worker Task (orchestrator) ---
+# Real DSP now runs here (worker_plan.md §2 keeps orchestration in the worker
+# task; the pure algorithm lives in dsp.py). This opens both the user recording
+# and the practice's native reference, runs the F0/RMS/DTW pipeline, and writes
+# the score + feedback segments + coordinate archive. Its only input is job_id
+# (everything else is fetched from the DB), so the Phase 3 SQS split is a
+# transport swap, not a rewrite.
+ALGO_VERSION = "dsp-1"
+
+
 def worker_task(job_id: str):
-    time.sleep(5)  # simulate heavy DSP wall-clock
     db = database.SessionLocal()
     try:
         job = db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id).first()
         if not job:
             return
-        asset = (
+
+        # 1. Resolve the user recording (persisted at ingest).
+        user_asset = (
             db.query(models.AudioAsset)
             .filter(models.AudioAsset.job_id == job_id, models.AudioAsset.role == "USER_RECORDING")
             .first()
         )
-        if not asset:
-            job.status = "FAILED"
-            job.error_message = "No user recording asset found for job."
-            db.commit()
+        if not user_asset:
+            _fail_job(db, job, "No user recording asset found for job.")
+            return
+        user_path = storage.get_path(user_asset.storage_key)
+        if not user_path.exists():
+            _fail_job(db, job, f"Stored user audio missing at {user_asset.storage_key}.")
             return
 
-        audio_path = storage.get_path(asset.storage_key)
-        if not audio_path.exists():
-            job.status = "FAILED"
-            job.error_message = f"Stored audio missing at {asset.storage_key}."
-            db.commit()
+        # 2. Resolve the native reference. Linked via Practice.audio_url as a
+        #    storage key (worker_plan.md §0). Until native clips are sourced,
+        #    this is null for every seeded practice — fail loudly and clearly
+        #    (§7: "native reference missing"), which is the expected state now.
+        native_key = job.practice.audio_url if job.practice else None
+        if not native_key:
+            _fail_job(db, job, "This practice isn't ready for scoring yet — its reference audio hasn't been added.")
+            return
+        native_path = storage.get_path(native_key)
+        if not native_path.exists():
+            _fail_job(db, job, f"Native reference audio missing at {native_key}.")
             return
 
-        # TODO(Phase 1.2): real DSP here (Parselmouth F0 + RMS, normalize, DTW, score).
+        # 3. Run the pure DSP pipeline (no DB/storage inside dsp.py).
+        try:
+            native_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(native_path)))
+            user_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(user_path)))
+            aligned = dsp.align(native_feat, user_feat)
+            overall, pitch_score, energy_score = dsp.score(aligned)
+            segments = dsp.make_segments(aligned)
+            archive = dsp.build_archive(aligned)
+        except dsp.DspError as exc:
+            # Expected, user-facing failures (no speech, length ratio, etc.).
+            _fail_job(db, job, str(exc))
+            return
+
+        # 4. Persist the coordinate archive behind the storage seam.
+        archive_key = storage.save_text(json.dumps(archive), storage.analysis_key(job_id))
+
+        # 5. Write feedback segments, each pointing at the archive.
+        for seg in segments:
+            db.add(
+                models.AnalysisSegment(
+                    job_id=job_id,
+                    timestamp_start=seg["timestamp_start"],
+                    timestamp_end=seg["timestamp_end"],
+                    feedback_tag=seg["feedback_tag"],
+                    explanation=seg["explanation"],
+                    s3_coordinates_json_path=archive_key,
+                )
+            )
+
+        # 6. Finalize the job.
         job.status = "SUCCESS"
-        job.overall_match_score = 85.5  # placeholder until real scoring lands
-        job.algo_version = "mock-0"
+        job.overall_match_score = round(overall, 1)
+        job.algo_version = ALGO_VERSION
         db.commit()
     except Exception as exc:  # never let a background failure vanish silently
         db.rollback()
@@ -207,6 +250,11 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
     job = db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id, models.ProsodyJob.user_id == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # A failed job is retryable unless it failed because the practice has no
+    # native reference yet — re-recording can't fix that (worker_plan.md §7).
+    retryable = None
+    if job.status == "FAILED":
+        retryable = bool(job.practice and job.practice.audio_url)
     return {
         "id": job.id,
         "status": job.status,
@@ -215,4 +263,5 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "practice_id": job.practice_id,
         "transcript": job.practice.transcript if job.practice else None,
         "segments": job.segments,
+        "retryable": retryable,
     }

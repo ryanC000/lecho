@@ -68,6 +68,7 @@ class JobStatusResponse(BaseModel):
     practice_id: Optional[int] = None
     transcript: Optional[str] = None
     segments: List[SegmentResponse] = []
+    retryable: Optional[bool] = None  # for FAILED jobs: can re-recording help?
 
     class Config:
         orm_mode = True

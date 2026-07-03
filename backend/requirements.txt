@@ -6,3 +6,5 @@ bcrypt==4.0.1  # pinned: bcrypt 5.x is incompatible with passlib 1.7.4
 python-jose[cryptography]
 python-multipart
 pydantic[email]
+praat-parselmouth  # F0 pitch tracking + load/resample/mono (worker_plan.md Part 1)
+numpy               # RMS energy + hand-rolled DTW alignment
