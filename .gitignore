@@ -49,6 +49,10 @@ dist-ssr/
 # Stored audio uploads / analysis archives (local storage seam)
 backend/storage/
 
+# Raw native-clip sources (ingested via backend/ingest_native.py; may contain
+# licensed material or personal voice recordings — never publish via git)
+native_audio/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -63,3 +67,5 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+package-lock.json

@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate, Link, useLoaderData } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
-import { generateMockAudioBlob } from '../utils/audio';
-import { apiFetch, isLoggedIn } from '../utils/auth';
+import { apiFetch, isLoggedIn, API_BASE } from '../utils/auth';
 
 const levelColors = {
   A1: 'var(--color-level-a1)',
@@ -19,25 +18,13 @@ export default function Practice() {
   const navigate = useNavigate();
   const practice = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
-  const [nativeAudioUrl, setNativeAudioUrl] = useState(null);
   const [uploadError, setUploadError] = useState(null);
 
-  useEffect(() => {
-    if (!practice) return;
-    
-    if (practice.audio_url) {
-      setNativeAudioUrl(practice.audio_url);
-    } else {
-      const blob = generateMockAudioBlob(practice.duration);
-      setNativeAudioUrl(URL.createObjectURL(blob));
-    }
-
-    return () => {
-      if (nativeAudioUrl && !practice.audio_url) {
-        URL.revokeObjectURL(nativeAudioUrl);
-      }
-    };
-  }, [practice]);
+  // Native clips are served by the backend; no reference audio means the
+  // practice isn't ready — never substitute a synthetic tone.
+  const nativeAudioUrl = practice?.audio_url
+    ? `${API_BASE}/practices/${practice.id}/audio`
+    : null;
 
   const handleUpload = async (audioBlob, duration) => {
     setUploadError(null);
@@ -141,24 +128,26 @@ export default function Practice() {
           />
         ) : (
           <p className="hand-text text-lg" style={{ color: 'var(--color-ink-light)' }}>
-            Loading audio…
+            This practice isn't ready yet — reference audio coming soon.
           </p>
         )}
       </section>
 
-      {/* ── Recording ── */}
-      <section className="flat-section">
-        <Recorder nativeDuration={practice.duration} onUpload={handleUpload} />
-        {uploadError && <div className="alert-error">{uploadError}</div>}
-        {userAudioUrl && (
-          <div className="playback">
-            <h4 className="hand-text text-lg mb-2" style={{ color: 'var(--color-ink-light)' }}>
-              Your Recording
-            </h4>
-            <AudioVisualizer audioUrl={userAudioUrl} color="var(--color-accent-warm)" />
-          </div>
-        )}
-      </section>
+      {/* ── Recording (only when there's a real reference to score against) ── */}
+      {nativeAudioUrl && (
+        <section className="flat-section">
+          <Recorder nativeDuration={practice.duration} onUpload={handleUpload} />
+          {uploadError && <div className="alert-error">{uploadError}</div>}
+          {userAudioUrl && (
+            <div className="playback">
+              <h4 className="hand-text text-lg mb-2" style={{ color: 'var(--color-ink-light)' }}>
+                Your Recording
+              </h4>
+              <AudioVisualizer audioUrl={userAudioUrl} color="var(--color-accent-warm)" />
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

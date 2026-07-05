@@ -20,7 +20,16 @@ export default function Recorder({ nativeDuration, onUpload }) {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Browser defaults leave AGC/noise-suppression/echo-cancellation ON —
+      // AGC's time-varying gain distorts the RMS contour the backend scores,
+      // and noise suppression can distort F0 (PRD FR-1). Disable all three.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
       streamRef.current = stream;
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
       analyserRef.current = audioContextRef.current.createAnalyser();

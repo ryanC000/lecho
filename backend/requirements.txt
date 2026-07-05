@@ -8,3 +8,5 @@ python-multipart
 pydantic[email]
 praat-parselmouth  # F0 pitch tracking + load/resample/mono (worker_plan.md Part 1)
 numpy               # RMS energy + hand-rolled DTW alignment
+pytest              # dev: test harness (test_dsp.py)
+httpx               # dev: FastAPI TestClient transport for integration tests

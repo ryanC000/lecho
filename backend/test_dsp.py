@@ -75,10 +75,11 @@ def test_identical_clips_score_near_perfect(tmp_path):
     native = _extract(native_wav)
     user = _extract(user_wav)
     aligned = dsp.align(native, user)
-    overall, pitch_score, energy_score = dsp.score(aligned)
+    overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
 
     assert overall > 95
     assert pitch_score > 95
+    assert timing_score > 95
     assert energy_score > 95
 
 
@@ -110,8 +111,8 @@ def test_pitch_offset_scores_lower_than_identical(tmp_path):
     good_aligned = dsp.align(native, good)
     bad_aligned = dsp.align(native, bad)
 
-    good_overall, good_pitch, _ = dsp.score(good_aligned)
-    bad_overall, bad_pitch, _ = dsp.score(bad_aligned)
+    good_overall, good_pitch, _, _ = dsp.score(good_aligned)
+    bad_overall, bad_pitch, _, _ = dsp.score(bad_aligned)
 
     # The core assertion worker_plan.md §5 asks for: a known, deliberate
     # contour difference must produce a clearly, deterministically lower score.
@@ -162,7 +163,14 @@ def test_make_segments_and_archive_shapes(tmp_path):
     assert isinstance(segments, list)
     for seg in segments:
         assert seg["timestamp_start"] <= seg["timestamp_end"]
-        assert seg["feedback_tag"] in {"INTONATION_DROP", "ENERGY_FLAT", "EMPHASIS_MISSED"}
+        assert seg["feedback_tag"] in {
+            "INTONATION_DROP",
+            "ENERGY_FLAT",
+            "EMPHASIS_MISSED",
+            "SYLLABLE_STRETCH",
+            "PAUSE_MISSED",
+            "PAUSE_EXTRA",
+        }
 
     archive = dsp.build_archive(aligned)
     n = len(native)

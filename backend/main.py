@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
@@ -45,6 +46,23 @@ def get_practice(practice_id: int, db: Session = Depends(database.get_db)):
         raise HTTPException(status_code=404, detail="Practice not found")
     return practice
 
+@app.get("/practices/{practice_id}/audio")
+def get_practice_audio(practice_id: int, db: Session = Depends(database.get_db)):
+    """Stream a practice's native reference clip (ingested via ingest_native.py).
+
+    Unauthenticated like the rest of the practice catalog — native clips are
+    shared content, unlike user recordings.
+    """
+    practice = db.query(models.Practice).filter(models.Practice.id == practice_id).first()
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    if not practice.audio_url:
+        raise HTTPException(status_code=404, detail="This practice has no reference audio yet.")
+    path = storage.get_path(practice.audio_url)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Reference audio file is missing from storage.")
+    return FileResponse(path, media_type="audio/wav")
+
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
@@ -81,7 +99,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 # the score + feedback segments + coordinate archive. Its only input is job_id
 # (everything else is fetched from the DB), so the Phase 3 SQS split is a
 # transport swap, not a rewrite.
-ALGO_VERSION = "dsp-1"
+ALGO_VERSION = "dsp-2"
 
 
 def worker_task(job_id: str):
@@ -123,7 +141,7 @@ def worker_task(job_id: str):
             native_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(native_path)))
             user_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(user_path)))
             aligned = dsp.align(native_feat, user_feat)
-            overall, pitch_score, energy_score = dsp.score(aligned)
+            overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             segments = dsp.make_segments(aligned)
             archive = dsp.build_archive(aligned)
         except dsp.DspError as exc:

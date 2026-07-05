@@ -28,8 +28,28 @@ PITCH_FLOOR_HZ = 75.0       # speech F0 range (worker_plan.md §9 open question,
 PITCH_CEILING_HZ = 500.0
 RMS_WINDOW_S = 0.025        # ~25ms RMS window, centered on each F0 frame time
 
-PITCH_WEIGHT = 0.7
-ENERGY_WEIGHT = 0.3
+PITCH_WEIGHT = 0.55
+TIMING_WEIGHT = 0.25
+ENERGY_WEIGHT = 0.20
+
+DTW_ENERGY_LAMBDA = 0.5     # weight of |Δrms_z| in the joint DTW frame cost (PRD 8.6.3)
+# Path regularization (dsp-2). Without it the timing score is unusable:
+# on gently-varying contours many paths cost within pitch-tracker noise
+# (~0.02 st) of each other, so the "optimal" path zig-zags randomly and the
+# slope reads noise as rhythm error.
+# - STEP_PENALTY: extra cost per non-diagonal step. Kills gratuitous
+#   insert/delete zig-zags (noise-scale payoff) while leaving genuine warps
+#   intact — following a real 2x syllable stretch pays semitone-scale costs,
+#   10-100x larger than the penalty it incurs.
+# - DIAG_PULL: tiny attraction toward the scaled diagonal so the mandatory
+#   |n-m| insertions spread evenly through flat-cost regions instead of
+#   clumping wherever the backtracker happens to walk.
+#   Values swept empirically (see implementation_plan.md Phase 1.5): larger
+#   STEP_PENALTY (0.05+) makes the path under-warp genuine 2x syllable
+#   stretches on gently-sloped contours; 0.02 keeps real warps sharp while
+#   still suppressing noise zig-zag.
+DTW_STEP_PENALTY = 0.02
+DTW_DIAG_PULL = 0.002
 
 MAX_LENGTH_RATIO = 3.0      # PRD §6 abort: longer/shorter trimmed duration
 SAKOE_CHIBA_BAND_FRAC = 0.15  # DTW band width as a fraction of the longer sequence
@@ -39,6 +59,11 @@ SILENCE_RMS_FRAC = 0.1      # frames below this fraction of peak RMS are "silenc
 # Larger K => score falls off more slowly with distance.
 SCORE_K_PITCH_SEMITONES = 4.0
 SCORE_K_ENERGY_Z = 1.5
+SCORE_K_TIMING = 0.4        # timing: rmse of log2(tempo-normalized path slope)
+
+SLOPE_WINDOW_S = 0.15       # window over which the local warping-path slope is measured
+SLOPE_STRETCH_RATIO = 1.5   # |log2(slope)| beyond log2(this) tags SYLLABLE_STRETCH
+PAUSE_MIN_S = 0.15          # minimum silent run to count as a pause (PRD 8.6.3)
 
 SEGMENT_PITCH_THRESHOLD_SEMITONES = 2.0
 SEGMENT_ENERGY_THRESHOLD_Z = 1.0
@@ -76,9 +101,16 @@ class Aligned:
     the native timeline by averaging whichever user frames the DTW path
     matched to each native frame. Everything downstream (scoring, segments,
     the archive) reads off this one native-indexed timeline.
+
+    dsp-2 additions: `user` (the trimmed user features on their own timeline,
+    needed to detect extra pauses that DTW would squeeze onto a couple of
+    native frames) and `local_slope` (the warping path's tempo-normalized
+    local slope per native frame — the rhythm signal, PRD 8.6).
     """
     native: ProsodyFeatures
-    path: list  # list[(native_idx, user_idx)], for archival/debugging
+    user: ProsodyFeatures
+    path: list  # list[(native_idx, user_idx)], monotonic
+    local_slope: np.ndarray  # per native frame; 1.0 = on the native's rhythm
     user_f0_hz: np.ndarray
     user_voiced: np.ndarray
     user_f0_semitone: np.ndarray
@@ -189,8 +221,18 @@ def _to_semitone(f0_hz: np.ndarray, voiced: np.ndarray) -> np.ndarray:
 
 
 def _zscore(values: np.ndarray) -> np.ndarray:
+    """Z-score with a relative std floor.
+
+    A raw z-score divides by the clip's own std; on low-dynamic signals that
+    amplifies measurement noise into full ±σ swings, which then reads as huge
+    energy deviation. Flooring the std at 5% of the peak leaves real speech
+    untouched (its RMS std is ~20-30% of peak) while keeping the scale sane
+    on flat clips.
+    """
     mean = np.mean(values)
     std = np.std(values)
+    floor = 0.05 * np.max(np.abs(values)) if len(values) else 0.0
+    std = max(std, floor)
     if std < 1e-9:
         return np.zeros_like(values)
     return (values - mean) / std
@@ -237,12 +279,15 @@ def trim_silence(feat: ProsodyFeatures) -> ProsodyFeatures:
 # ------------------------------------------------------------------------
 
 def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
-    """DTW-align on the pitch (semitone) contour; apply the same path to RMS.
+    """DTW-align on a joint pitch+energy cost; one path for everything.
 
-    Aligning pitch and energy independently would produce two different
-    time-warps, making a coherent "you diverged at time T" story impossible
-    (§4 step 6). Pitch is the reliable alignment cue; energy rides the same
-    path the pitch alignment already found.
+    dsp-1 aligned on pitch alone, which made pauses invisible: unvoiced gaps
+    are pitch-interpolated (a fabricated straight line), so the path could
+    glide through a native pause at ~zero cost. The joint frame cost
+    |Δsemitone| + DTW_ENERGY_LAMBDA·|Δrms_z| makes silences anchor the
+    alignment — matching a native pause frame to a user loud frame is now
+    expensive (PRD 8.6.3). Still a single warping path, so "you diverged at
+    time T" remains a coherent story (§4 step 6).
     """
     len_n, len_u = len(native), len(user)
     ratio = max(len_n, len_u) / max(1, min(len_n, len_u))
@@ -252,7 +297,17 @@ def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
             f"(native={len_n} frames, user={len_u} frames)."
         )
 
-    path = _dtw_path(native.f0_semitone, user.f0_semitone)
+    # The DTW energy feature is PEAK-normalized RMS (0..1), not rms_z: z-scoring
+    # divides by the clip's RMS std, which explodes measurement noise into full
+    # ±σ swings on low-dynamic clips and lets noise outshout the pitch signal.
+    # Peak normalization keeps the property that matters for alignment —
+    # silence (~0) vs. speech (>0.2) anchors pauses — without the blow-up.
+    # rms_z remains the energy feature for *scoring*, where cross-clip
+    # comparability of contour shape is the point.
+    native_rms_n = native.rms / max(np.max(native.rms), 1e-12)
+    user_rms_n = user.rms / max(np.max(user.rms), 1e-12)
+    path = _dtw_path(native.f0_semitone, native_rms_n, user.f0_semitone, user_rms_n)
+    local_slope = _path_local_slope(path, len_n, len_u)
 
     user_f0_hz = _apply_path_mean(path, len_n, user.f0_hz)
     user_f0_semitone = _apply_path_mean(path, len_n, user.f0_semitone)
@@ -262,7 +317,9 @@ def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
 
     return Aligned(
         native=native,
+        user=user,
         path=path,
+        local_slope=local_slope,
         user_f0_hz=user_f0_hz,
         user_voiced=user_voiced,
         user_f0_semitone=user_f0_semitone,
@@ -271,11 +328,16 @@ def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
     )
 
 
-def _dtw_path(native_seq: np.ndarray, user_seq: np.ndarray) -> list:
-    """Sakoe-Chiba-banded DTW. Returns the warping path as (i, j) index pairs,
-    i in [0, len(native_seq)), j in [0, len(user_seq)).
+def _dtw_path(
+    native_pitch: np.ndarray,
+    native_energy: np.ndarray,
+    user_pitch: np.ndarray,
+    user_energy: np.ndarray,
+) -> list:
+    """Sakoe-Chiba-banded DTW on the joint pitch+energy frame cost.
+    Returns the warping path as (i, j) index pairs, i in [0, n), j in [0, m).
     """
-    n, m = len(native_seq), len(user_seq)
+    n, m = len(native_pitch), len(user_pitch)
     band = max(1, int(SAKOE_CHIBA_BAND_FRAC * max(n, m)))
 
     INF = np.inf
@@ -290,8 +352,16 @@ def _dtw_path(native_seq: np.ndarray, user_seq: np.ndarray) -> list:
         j_lo = max(1, int(center - band))
         j_hi = min(m, int(center + band))
         for j in range(j_lo, j_hi + 1):
-            d = abs(native_seq[i - 1] - user_seq[j - 1])
-            best_prev = min(cost[i - 1, j], cost[i, j - 1], cost[i - 1, j - 1])
+            d = (
+                abs(native_pitch[i - 1] - user_pitch[j - 1])
+                + DTW_ENERGY_LAMBDA * abs(native_energy[i - 1] - user_energy[j - 1])
+                + DTW_DIAG_PULL * abs(j - center)
+            )
+            best_prev = min(
+                cost[i - 1, j] + DTW_STEP_PENALTY,
+                cost[i, j - 1] + DTW_STEP_PENALTY,
+                cost[i - 1, j - 1],
+            )
             cost[i, j] = d + best_prev
 
     # Backtrack from (n, m) to (0, 0).
@@ -304,10 +374,13 @@ def _dtw_path(native_seq: np.ndarray, user_seq: np.ndarray) -> list:
         elif j == 0:
             i -= 1
         else:
-            step = min(cost[i - 1, j], cost[i, j - 1], cost[i - 1, j - 1])
-            if step == cost[i - 1, j - 1]:
+            diag = cost[i - 1, j - 1]
+            up = cost[i - 1, j] + DTW_STEP_PENALTY
+            left = cost[i, j - 1] + DTW_STEP_PENALTY
+            step = min(diag, up, left)
+            if step == diag:
                 i, j = i - 1, j - 1
-            elif step == cost[i - 1, j]:
+            elif step == up:
                 i -= 1
             else:
                 j -= 1
@@ -337,26 +410,63 @@ def _apply_path_any(path: list, len_n: int, source: np.ndarray) -> np.ndarray:
     return result
 
 
+def _path_local_slope(path: list, len_n: int, len_u: int) -> np.ndarray:
+    """Tempo-normalized local slope of the warping path, per native frame.
+
+    j_mean[i] is the mean user index the path matched to native frame i; its
+    slope over a ~SLOPE_WINDOW_S window is how many user frames the user
+    "spent" per native frame locally. Dividing by the global tempo ratio
+    (len_u/len_n) makes 1.0 mean "on the native's rhythm once overall speed
+    is factored out" — a uniformly slower read is a tempo choice, not a
+    rhythm error (PRD 8.6.1). This is the signal DTW's warping would
+    otherwise erase from the pitch/energy RMSE.
+    """
+    j_mean = _apply_path_mean(path, len_n, np.arange(len_u, dtype=np.float64))
+    half_w = max(1, int(round((SLOPE_WINDOW_S / FRAME_HOP_S) / 2)))
+    global_slope = len_u / max(1, len_n)
+    slope = np.empty(len_n, dtype=np.float64)
+    for i in range(len_n):
+        lo = max(0, i - half_w)
+        hi = min(len_n - 1, i + half_w)
+        raw = (j_mean[hi] - j_mean[lo]) / max(1, hi - lo)
+        slope[i] = raw / global_slope
+    # Clamp so log2() stays finite when the path locally flatlines.
+    return np.clip(slope, 0.05, 20.0)
+
+
 # ------------------------------------------------------------------------
 # 5. Scoring
 # ------------------------------------------------------------------------
 
 def score(aligned: Aligned) -> tuple:
-    """Returns (overall, pitch_score, energy_score), each 0-100.
+    """Returns (overall, pitch_score, timing_score, energy_score), each 0-100.
+
+    Timing (dsp-2, PRD 8.6.1) scores the warping path itself: RMSE of
+    log2(tempo-normalized local slope), so 1.5x local stretch and 0.67x local
+    rush are penalized symmetrically and a uniform tempo difference scores ~0
+    deviation. Without this component the overall score is structurally blind
+    to rhythm — DTW absorbs timing errors before the pitch/energy RMSE sees
+    them.
 
     The RMSE -> percentage mapping (score = 100*exp(-rmse/K)) is a deliberate
     placeholder: K cannot be derived on paper and requires the good/bad
     calibration harness (worker_plan.md §5) to tune once real recordings
-    exist. SCORE_K_PITCH_SEMITONES / SCORE_K_ENERGY_Z are that placeholder.
+    exist. The SCORE_K_* constants are that placeholder.
     """
     pitch_rmse = _rmse(aligned.native.f0_semitone, aligned.user_f0_semitone)
     energy_rmse = _rmse(aligned.native.rms_z, aligned.user_rms_z)
+    timing_rmse = float(np.sqrt(np.mean(np.log2(aligned.local_slope) ** 2)))
 
     pitch_score = 100.0 * np.exp(-pitch_rmse / SCORE_K_PITCH_SEMITONES)
     energy_score = 100.0 * np.exp(-energy_rmse / SCORE_K_ENERGY_Z)
-    overall = PITCH_WEIGHT * pitch_score + ENERGY_WEIGHT * energy_score
+    timing_score = 100.0 * np.exp(-timing_rmse / SCORE_K_TIMING)
+    overall = (
+        PITCH_WEIGHT * pitch_score
+        + TIMING_WEIGHT * timing_score
+        + ENERGY_WEIGHT * energy_score
+    )
 
-    return float(overall), float(pitch_score), float(energy_score)
+    return float(overall), float(pitch_score), float(timing_score), float(energy_score)
 
 
 def _rmse(a: np.ndarray, b: np.ndarray) -> float:
@@ -404,22 +514,87 @@ def make_segments(aligned: Aligned) -> list:
             }
         )
 
+    # SYLLABLE_STRETCH (dsp-2): runs where the tempo-normalized path slope
+    # deviates beyond SLOPE_STRETCH_RATIO in either direction.
+    log_slope = np.log2(aligned.local_slope)
+    stretch_mask = np.abs(log_slope) > np.log2(SLOPE_STRETCH_RATIO)
+    for run_start, run_end in _find_runs(stretch_mask):
+        stretched = log_slope[run_start:run_end].mean() > 0
+        segments.append(
+            {
+                "timestamp_start": float(native.times[run_start]),
+                "timestamp_end": float(native.times[run_end - 1]),
+                "feedback_tag": "SYLLABLE_STRETCH",
+                "explanation": (
+                    "You linger on this part longer than the native speaker."
+                    if stretched
+                    else "You rush through this part faster than the native speaker."
+                ),
+            }
+        )
+
+    # PAUSE_MISSED / PAUSE_EXTRA (dsp-2): energy-based pause runs. Pauses are
+    # detected on raw RMS (fraction of each clip's own peak), not rms_z, so
+    # the threshold is meaningful regardless of the clip's loudness spread.
+    pause_min_frames = max(SEGMENT_MIN_FRAMES, int(round(PAUSE_MIN_S / FRAME_HOP_S)))
+    native_pause = _pause_mask(native.rms)
+    user_pause_aligned = _pause_mask(aligned.user_rms)
+    for run_start, run_end in _find_runs(native_pause, min_frames=pause_min_frames):
+        if user_pause_aligned[run_start:run_end].mean() < 0.3:
+            segments.append(
+                {
+                    "timestamp_start": float(native.times[run_start]),
+                    "timestamp_end": float(native.times[run_end - 1]),
+                    "feedback_tag": "PAUSE_MISSED",
+                    "explanation": "The native speaker pauses here, but you speak straight through.",
+                }
+            )
+
+    # Extra pauses must be found on the USER's own timeline: DTW compresses a
+    # user-only pause onto a couple of native frames, so it would vanish if we
+    # only looked at the aligned arrays. Map each user pause run back to the
+    # native timestamps its frames were matched to.
+    user_pause = _pause_mask(aligned.user.rms)
+    for run_start, run_end in _find_runs(user_pause, min_frames=pause_min_frames):
+        nat_idx = [i for i, j in aligned.path if run_start <= j < run_end]
+        if not nat_idx:
+            continue
+        lo, hi = min(nat_idx), max(nat_idx)
+        if native_pause[lo : hi + 1].mean() > 0.7:
+            continue  # the native pauses here too — not an extra pause
+        segments.append(
+            {
+                "timestamp_start": float(native.times[lo]),
+                "timestamp_end": float(native.times[hi]),
+                "feedback_tag": "PAUSE_EXTRA",
+                "explanation": "You pause here, but the native speaker continues without a break.",
+            }
+        )
+
     segments.sort(key=lambda s: s["timestamp_start"])
     return segments
 
 
-def _find_runs(mask: np.ndarray) -> list:
-    """Contiguous True runs of at least SEGMENT_MIN_FRAMES, as (start, end) half-open indices."""
+def _pause_mask(rms: np.ndarray) -> np.ndarray:
+    """Frames quieter than SILENCE_RMS_FRAC of the clip's peak RMS."""
+    peak = np.max(rms) if len(rms) else 0.0
+    if peak <= 0:
+        return np.zeros(len(rms), dtype=bool)
+    return rms < peak * SILENCE_RMS_FRAC
+
+
+def _find_runs(mask: np.ndarray, min_frames: int = SEGMENT_MIN_FRAMES) -> list:
+    """Contiguous True runs of at least min_frames, as (start, end) half-open indices."""
     runs = []
     start = None
     for i, val in enumerate(mask):
         if val and start is None:
             start = i
         elif not val and start is not None:
-            if i - start >= SEGMENT_MIN_FRAMES:
+            if i - start >= min_frames:
                 runs.append((start, i))
             start = None
-    if start is not None and len(mask) - start >= SEGMENT_MIN_FRAMES:
+    if start is not None and len(mask) - start >= min_frames:
         runs.append((start, len(mask)))
     return runs
 
