@@ -1,5 +1,7 @@
 # L'Écho — Implementation Plan
 
+> **Superseded for execution (2026-07-07):** the live, task-by-task execution document is now `master_implementation_plan.md` (repo root). This file remains as the audit/rationale record behind it.
+
 **Companion to:** `design_document.md` (v1.2.0), `worker_plan.md` (dsp-1, shipped)
 **Purpose:** (1) audit what the codebase actually does today, (2) lay out the phased build-out to the PRD's target, incorporating the v1.2.0 decisions (PRD Sections 8.4–8.9).
 
