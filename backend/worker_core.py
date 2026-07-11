@@ -61,8 +61,8 @@ def run(job_id: str, session_factory):
         # 3. Run the pure DSP pipeline (no DB/storage inside dsp.py). get_path
         #    materializes each clip locally for the DSP loader (S3: temp file).
         try:
-            native_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(storage.get_path(native_key))))
-            user_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(storage.get_path(user_asset.storage_key))))
+            native_feat = dsp.features_for(storage.get_path(native_key))
+            user_feat = dsp.features_for(storage.get_path(user_asset.storage_key))
             aligned = dsp.align(native_feat, user_feat)
             overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             segments = dsp.make_segments(aligned)

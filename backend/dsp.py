@@ -275,6 +275,17 @@ def trim_silence(feat: ProsodyFeatures) -> ProsodyFeatures:
     return trimmed
 
 
+def features_for(path) -> ProsodyFeatures:
+    """Load a stored clip and produce its trimmed prosody features.
+
+    The pipeline's standard entry point (load → extract → trim), so callers
+    don't re-encode the stage order. The stage functions stay public as
+    internal seams for the test suite and for callers that already hold a
+    loaded Sound (the ingest CLI).
+    """
+    return trim_silence(extract_features(load_mono_16k(path)))
+
+
 # ------------------------------------------------------------------------
 # 4. DTW alignment (hand-rolled — see worker_plan.md §1 for the justification
 #    over dtw-python: this problem is a few hundred to ~1500 frames per side,
