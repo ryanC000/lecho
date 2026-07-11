@@ -26,7 +26,7 @@ Binding decisions (owner, 2026-07-07): Phase 3 spec-only; human recordings via e
 
 ## Conventions
 
-- Repo root: `c:\Users\Chiew Yuit Shuin Rya\Projects\lecho`. Backend venv: `backend/.venv` (Python 3.14, Windows). Frontend: Vite (`cd frontend && npm run dev`).
+- Repo root: `c:\Users\ryanc\lecho`. Backend venv: `backend/.venv` (Python 3.14, Windows). Frontend: Vite (`cd frontend && npm run dev`).
 - **Windows / Python 3.14 dependency rule:** only deps with prebuilt cp314 wheels or pure-Python (this is why DTW is hand-rolled and `bcrypt==4.0.1` is pinned). Check every new dep first: `pip install --only-binary :all: <pkg>` in a throwaway; if it fails, stop and record the blocker.
 - **Schema changes (no Alembic until Phase 3):** all column additions go through `backend/migrations.py` (created in Task 0.2) — an idempotent list of `(table, column, DDL)` applied at app startup via `PRAGMA table_info` checks. Never solve a schema change by deleting `lecho.db` — that destroys ingested native-clip rows.
 - Run backend: `cd backend && .venv\Scripts\uvicorn main:app --reload`. Backend tests: `cd backend && .venv\Scripts\python -m pytest -x -q`.
@@ -59,18 +59,19 @@ Binding decisions (owner, 2026-07-07): Phase 3 spec-only; human recordings via e
 ## Stage 1 — Calibration (PRD 8.9) — definition of done for dsp-2 scoring
 
 ### Task 1.1 — Build the calibration harness (before the recordings exist)
-- **Goal:** a CLI that, given a corpus manifest, checks native-vs-native ≥ 85 and monotone ≥ 20 points lower, and helps tune constants.
+- **Goal:** a CLI that, given a corpus manifest, checks owner-emulation ≥ 75 and monotone ≥ 20 points lower, and helps tune constants (ADR 0002 — no second native speaker exists; leniency is bounded by the discrimination margin).
 - **Files:** new `backend/calibrate.py`; new `backend/test_calibration.py` (pytest, `skipif` manifest missing).
 - **Manifest contract** — `native_audio/calibration/manifest.json` (dir already gitignored), paths relative to the manifest, ≥3 entries required for graduation:
   ```json
-  [{"practice_id": 7, "reference": "p7_native_a.wav", "rendition_b": "p7_native_b.wav", "monotone": "p7_monotone.wav"}]
+  [{"practice_id": 7, "reference": "p7_native.wav", "emulation": "p7_emulation.wav", "monotone": "p7_monotone.wav", "low_effort": "p7_low_effort.wav"}]
   ```
-- **Steps:** `calibrate.py` runs the pure dsp pipeline (no HTTP/DB): `load_mono_16k → extract_features → trim_silence → align → score` for (B vs A) and (monotone vs A) per entry; prints a table of all four score components. `--tune` grid-searches `SCORE_K_PITCH_SEMITONES`, `SCORE_K_TIMING`, `SCORE_K_ENERGY_Z`, `DTW_ENERGY_LAMBDA`, and the weights, maximizing the native-vs-monotone margin subject to native-vs-native ≥ 85; prints recommended constants (a human applies them to `dsp.py` deliberately — no auto-edit). `--smoke` runs on synthetic WAVs (reuse `test_dsp.py` helpers) so the harness is testable before the corpus exists.
+  `low_effort` is optional (≥1 entry should have it) and is a diagnostic row only — printed in the table, never a tuning constraint.
+- **Steps:** `calibrate.py` runs the pure dsp pipeline (no HTTP/DB): `load_mono_16k → extract_features → trim_silence → align → score` for (emulation vs reference), (monotone vs reference), and any (low_effort vs reference) per entry; prints a table of all four score components. `--tune` grid-searches `SCORE_K_PITCH_SEMITONES`, `SCORE_K_TIMING`, `SCORE_K_ENERGY_Z`, `DTW_ENERGY_LAMBDA`, and the weights, maximizing the emulation-vs-monotone margin subject to emulation ≥ 75; prints recommended constants (a human applies them to `dsp.py` deliberately — no auto-edit). `--smoke` runs on synthetic WAVs (reuse `test_dsp.py` helpers) so the harness is testable before the corpus exists.
 - **Verify:** `python calibrate.py --smoke` runs end to end.
 - **Complications:** the Phase 1R real-audio finding (low-effort take outscored mid-effort; learner median F0 ~115Hz near the 75Hz pitch floor → creak/octave-error risk) means `--tune` should also try `PITCH_FLOOR_HZ` ∈ {60, 65, 75} as a diagnostic. Record the outcome in the Decision log.
 
 ### 🧑 HUMAN GATE H1 — record the calibration corpus
-- **Owner must record, for ≥3 practices:** a second native rendition (different take/speaker) and a deliberate monotone read of the same line, as WAVs in `native_audio/calibration/`, and fill `manifest.json`. Practice 7's original reference may need re-ingesting first (no `storage/` dir exists on this machine — re-run `ingest_native.py` for practice 7).
+- **Owner must record, for ≥3 practices:** a best-effort **emulation take** — recorded shadow-style, listening to the native clip on headphones while speaking along — and a deliberate **monotone take** of the same line (plus one **low-effort take** for at least one practice), as WAVs in `native_audio/calibration/`, and fill `manifest.json` (ADR 0002). Headphones are mandatory: these WAVs bypass the app's bleed gate. Practice 7's original reference may need re-ingesting first (no `storage/` dir exists on this machine — re-run `ingest_native.py` for practice 7).
 - **Blocks:** Task 1.2 only. All other tracks proceed.
 
 ### Task 1.2 — Run calibration, graduate the constants *(blocked on H1)*
@@ -86,7 +87,7 @@ Binding decisions (owner, 2026-07-07): Phase 3 spec-only; human recordings via e
 ### Task 2.1 — MFA environment + alignment script
 - **Goal:** `storage/alignments/{practice_id}.json` word timings for every ingested native clip.
 - **Files:** new `scripts/align_natives.py` (repo-root `scripts/`); new `scripts/README_MFA.md` (conda setup).
-- **Setup (documented, one-time):** install Miniconda → `conda create -n mfa -c conda-forge montreal-forced-aligner` → `mfa model download acoustic french_mfa` + `mfa model download dictionary french_mfa`. **Never pip-install MFA into the 3.14 venv.**
+- **Setup (documented, one-time):** install Miniconda → `conda create -n mfa -c conda-forge montreal-forced-aligner` → `mfa model download acoustic french_mfa` + `mfa model download dictionary french_mfa`. **Never pip-install MFA into the 3.14 venv.** Owner-approved 2026-07-11: the agent performs this install itself (user-scope Miniconda) when Track B starts — not a human gate.
 - **Steps:** the script reads the DB for practices with `audio_url`, builds a temp MFA corpus dir (`{id}.wav` copied from storage + `{id}.txt` transcript, normalized: lowercase, strip punctuation except apostrophes/hyphens, spell out digits), shells out `conda run -n mfa mfa align <corpus> french_mfa french_mfa <out> --clean`, parses each output TextGrid with a small pure-Python parser (~40 lines; "words" tier only; skip empty/`<eps>` intervals), writes via the `storage.py` seam.
 - **Alignment JSON contract (fixed — hand-authored files must be drop-in identical):**
   ```json
@@ -232,3 +233,6 @@ Stage 5 tasks are mutually independent; do **5.6 early** (regression net for eve
 *(Append a dated line whenever a placeholder constant graduates or a decision is resolved.)*
 
 - 2026-07-07 — Plan created. Owner decisions: Phase 3 spec-only; human recording gates; MFA via conda; real Google OAuth (GIS ID-token flow).
+- 2026-07-11 — Task 0.1 done (`338eb58`): dsp-2 baseline frozen with trim-time re-normalization of `f0_semitone`/`rms_z` and median-slope tempo estimate (ADR 0001).
+- 2026-07-11 — Calibration corpus redefined (ADR 0002): owner emulation + monotone (+ low-effort diagnostic); gates emulation ≥ 75, margin ≥ 20. No second native speaker available. Emulation takes recorded shadow-style with headphones.
+- 2026-07-11 — Agent may install Miniconda (user-scope) + mfa conda env + French models for Task 2.1; owner approved.
