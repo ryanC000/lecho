@@ -258,13 +258,17 @@ def trim_silence(feat: ProsodyFeatures) -> ProsodyFeatures:
         raise NoSpeechDetectedError("No frames exceed the silence threshold.")
 
     start, end = above[0], above[-1] + 1
+    # f0_semitone and rms_z are RE-NORMALIZED over the trimmed region: the
+    # pre-trim versions include the dead air in their median/mean/std, which
+    # makes a clip with lead-in silence z-scale incomparably to one without
+    # (an identical delivery would read as a large energy deviation).
     trimmed = ProsodyFeatures(
         times=feat.times[start:end],
         f0_hz=feat.f0_hz[start:end],
         voiced=feat.voiced[start:end],
-        f0_semitone=feat.f0_semitone[start:end],
+        f0_semitone=_to_semitone(feat.f0_hz[start:end], feat.voiced[start:end]),
         rms=feat.rms[start:end],
-        rms_z=feat.rms_z[start:end],
+        rms_z=_zscore(feat.rms[start:end]),
     )
     if not trimmed.voiced.any():
         raise NoSpeechDetectedError("No voiced frames remain after silence trim.")
@@ -415,21 +419,30 @@ def _path_local_slope(path: list, len_n: int, len_u: int) -> np.ndarray:
 
     j_mean[i] is the mean user index the path matched to native frame i; its
     slope over a ~SLOPE_WINDOW_S window is how many user frames the user
-    "spent" per native frame locally. Dividing by the global tempo ratio
-    (len_u/len_n) makes 1.0 mean "on the native's rhythm once overall speed
-    is factored out" — a uniformly slower read is a tempo choice, not a
-    rhythm error (PRD 8.6.1). This is the signal DTW's warping would
-    otherwise erase from the pitch/energy RMSE.
+    "spent" per native frame locally. Dividing by the median raw slope makes
+    1.0 mean "on the native's rhythm once overall speed is factored out" — a
+    uniformly slower read is a tempo choice, not a rhythm error (PRD 8.6.1).
+    This is the signal DTW's warping would otherwise erase from the
+    pitch/energy RMSE.
+
+    The tempo estimate is the MEDIAN raw slope, not len_u/len_n: energy-based
+    trimming always leaves a few near-silent frames past the true speech
+    boundary (the RMS window smears energy outward), and a length ratio lets
+    those junk edge frames impose a constant spurious deviation across the
+    whole clip. The median is dominated by the path's interior, so edge junk
+    only costs at the edges.
     """
     j_mean = _apply_path_mean(path, len_n, np.arange(len_u, dtype=np.float64))
     half_w = max(1, int(round((SLOPE_WINDOW_S / FRAME_HOP_S) / 2)))
-    global_slope = len_u / max(1, len_n)
-    slope = np.empty(len_n, dtype=np.float64)
+    raw = np.empty(len_n, dtype=np.float64)
     for i in range(len_n):
         lo = max(0, i - half_w)
         hi = min(len_n - 1, i + half_w)
-        raw = (j_mean[hi] - j_mean[lo]) / max(1, hi - lo)
-        slope[i] = raw / global_slope
+        raw[i] = (j_mean[hi] - j_mean[lo]) / max(1, hi - lo)
+    tempo = float(np.median(raw))
+    if tempo <= 0:
+        tempo = len_u / max(1, len_n)  # degenerate path: fall back to length ratio
+    slope = raw / tempo
     # Clamp so log2() stays finite when the path locally flatlines.
     return np.clip(slope, 0.05, 20.0)
 

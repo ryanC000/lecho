@@ -6,10 +6,6 @@ slower/faster reading is NOT penalized, and a joint pitch+energy DTW cost so
 that silences (pauses) anchor the alignment. These tests pin the contract of
 that upgrade against synthetic audio whose rhythm we control exactly.
 
-NOTE: dsp-2 is being written in parallel and does not exist yet, so every
-test here is expected to FAIL (missing `local_slope`, 3-tuple vs 4-tuple,
-missing tags) until the implementation lands. Collection must still succeed.
-
 We reuse test_dsp.py's synthetic-audio helpers so the two suites generate
 signal identically; `_write_piecewise_wav` below adds the phase-continuous,
 silence-capable generator the rhythm/pause tests need.
@@ -133,6 +129,10 @@ def test_shadow_lag_scores_high(tmp_path):
 
     assert overall >= 85
     assert timing_score >= 85
+    # Pins the post-trim re-normalization of rms_z: with z-scores computed over
+    # the UNTRIMMED clip, the user's 0.8s of dead air skews their mean/std and
+    # this identical delivery scored ~61 on energy.
+    assert energy_score >= 70
 
 
 # --- 3. Uniform tempo difference must not be penalized ---------------------
