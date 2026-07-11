@@ -4,7 +4,7 @@
 **Version:** 1.2.0-PRD (Revised — shadowing mode, rhythm scoring, word-anchored feedback)
 **Author:** Technical Product Manager & Lead UX/UI Designer
 
-**Revision Note (v1.1.0):** This revision resolves the three open questions from Section 8 of v1.0.0 and reconciles the PRD against the current state of the repository (see `implementation_plan.md` for the full audit and phased build-out). The biggest structural change: the PRD's target architecture (SQS/S3/Postgres/Terraform) is now explicitly framed as a **later phase**. The repository today is a local-first MVP (SQLite, in-process background tasks, local disk, a fully mocked worker), and the plan is to make that MVP *real* — real DSP, real audio persistence, real job status — before migrating to the AWS stack described in Section 4.
+**Revision Note (v1.1.0):** This revision resolves the three open questions from Section 8 of v1.0.0 and reconciles the PRD against the current state of the repository (see `master_implementation_plan.md` for the full audit and phased build-out). The biggest structural change: the PRD's target architecture (SQS/S3/Postgres/Terraform) is now explicitly framed as a **later phase**. The repository today is a local-first MVP (SQLite, in-process background tasks, local disk, a fully mocked worker), and the plan is to make that MVP *real* — real DSP, real audio persistence, real job status — before migrating to the AWS stack described in Section 4.
 
 **Revision Note (v1.2.0):** This revision incorporates the SLA/shadowing research review (see `Shadowing Development Research.txt`) and resolves six new decisions, recorded in Sections 8.4–8.9:
 1. **Word-anchored feedback (8.4):** feedback segments are mapped to transcript words via offline forced alignment of the *native* clips (Montreal Forced Aligner) — not raw timestamps, and not per-user phoneme classification (the PLS-SVM proposal is explicitly rejected).
@@ -75,7 +75,7 @@ Extracting fundamental pitch frequencies ($F_0$ curves), computing amplitude env
 
 ## 4. Technical Architecture & Constraints
 
-**Phasing note:** the stack below is the **Phase 3 (cloud) target**, not the current state. The repository today runs a local-first MVP: SQLite instead of PostgreSQL, in-process FastAPI `BackgroundTasks` instead of SQS + a separate worker container, and local disk instead of S3. See `implementation_plan.md` for the phase-by-phase migration path and why local-first comes first (faster iteration on the DSP algorithm itself, no AWS spend, before paying the infra cost of the queue/object-store split).
+**Phasing note:** the stack below is the **Phase 3 (cloud) target**, not the current state. The repository today runs a local-first MVP: SQLite instead of PostgreSQL, in-process FastAPI `BackgroundTasks` instead of SQS + a separate worker container, and local disk instead of S3. See `master_implementation_plan.md` for the phase-by-phase migration path and why local-first comes first (faster iteration on the DSP algorithm itself, no AWS spend, before paying the infra cost of the queue/object-store split).
 
 ### Tech Stack Specifications
 *   **Frontend Framework:** React (Single Page Application architecture).
@@ -241,4 +241,4 @@ The product is framed (honestly) as **shadowing/imitation fidelity**, not absolu
 3. **Liaison heuristic** (cheaper interim step): using the 8.4 word timings to locate obligatory liaison boundaries in the native clip, check user voicing/energy continuity across them. Imperfect but principled; would partially restore `LIAISON_MISSED`.
 
 ## 10. Implementation Roadmap
-See `implementation_plan.md` for the current-state code audit and the phased plan (Phase 1: finish the local MVP for real — real DSP, real audio persistence, real job polling; Phase 2: harden auth/observability/testing; Phase 3: migrate to the AWS stack described in Section 4).
+See `master_implementation_plan.md` for the current-state code audit and the phased plan (Phase 1: finish the local MVP for real — real DSP, real audio persistence, real job polling; Phase 2: harden auth/observability/testing; Phase 3: migrate to the AWS stack described in Section 4).

@@ -1,4 +1,4 @@
-"""Ingest a native reference clip for a Practice (implementation_plan.md Phase 1R).
+"""Ingest a native reference clip for a Practice (master_implementation_plan.md appendix, Phase 1R).
 
 Converts any Praat-readable audio to canonical 16kHz mono PCM WAV, sanity-checks
 it with the real DSP pipeline (voiced speech must survive silence trimming),

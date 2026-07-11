@@ -1,7 +1,7 @@
 # L'Écho — Master Implementation Plan (end-to-end monolith)
 
-**Companion to:** `design_document.md` (PRD v1.2.0), `implementation_plan.md`, `worker_plan.md`
-**Status:** live execution document — supersedes the phase breakdown in `implementation_plan.md` Parts 2–5.
+**Companion to:** `design_document.md` (PRD v1.2.0), `worker_plan.md`
+**Status:** live execution document. The former `implementation_plan.md` (audit/rationale record) was merged into the Appendix below and deleted (2026-07-11).
 **Audience:** coding agents executing tasks step by step. Each task is self-contained: Goal / Files / Steps / Contracts / Verify / Complications. Do not start a task whose dependencies (listed per task or in the execution-order section at the bottom) are unfinished.
 
 ## How to use this file
@@ -227,6 +227,47 @@ Order matters: storage → DB → queue/worker → containers → infra → CI.
 - **Track D:** 4.1 → 4.2 (word labels degrade without Track B)
 
 Stage 5 tasks are mutually independent; do **5.6 early** (regression net for everything else). 🧑 H2 is ongoing and blocks nothing in code. Stage 6 only on explicit owner trigger.
+
+## Appendix — audit & rationale record (merged from `implementation_plan.md`, 2026-07-11)
+
+*The standalone `implementation_plan.md` was merged here and deleted; git history preserves the original. Its Parts 2–5 phase breakdown is fully superseded by the Stages above — what follows is only the material the stages don't restate.*
+
+### PRD decisions the plans assume (v1.2.0 §8, plus v1.1.0)
+
+Word-anchored feedback via offline MFA alignment of native clips (8.4); `LIAISON_MISSED` descoped (8.5); rhythm scored from the DTW warping path with a joint alignment cost and pause tags — `dsp-2` (8.6); simultaneous shadowing as the default capture mode with headphone/bleed gating (8.7); native references self-recorded + open-licensed, no film audio, TTS dev-only (8.8); calibration protocol as the definition of done for scoring (8.9 — corpus composition since revised by ADR 0002). Plus v1.1.0: F0 + RMS speaker-normalized, prosody-only scope, local-first with AWS deferred to the final phase.
+
+### Audit rationale (2026-07-05) — why the gaps mattered
+
+The load-bearing *reasons* behind decisions already reflected in the code and the Stages:
+
+- **Capture constraints are forced off** (`echoCancellation/noiseSuppression/autoGainControl: false`) because browser-default AGC applies time-varying gain that distorts the exact RMS contour the system scores (FR-1).
+- **dsp-1 was blind to rhythm:** it scored pitch/energy RMSE *after* DTW warped timing differences away, and aligned on pitch alone, so pause structure never influenced alignment or score — the motivation for dsp-2's joint cost and path-slope timing axis (PRD 8.6).
+- **The mock-tone trap** (recording against a synthetic beep when a practice had no reference) and the **stale mock worker** (`worker/main.py`, fabricated scores if run by hand) were removed in Phase 1R; the Phase 3 SQS entrypoint must be written fresh, importing `backend/dsp.py`.
+- **Native-duration ingest window is 2.5–12.5s** so user recordings at ±20% stay inside the absolute 2–15s gate.
+
+### Phase 1R record (2026-07-05) — first real-audio run & calibration finding
+
+Synthetic end-to-end smoke passed (ingest → audio endpoint → register → multipart `POST /jobs` → real DSP → SUCCESS, identical-clip score = 100.0). Real-audio run on practice 7 ("Napoléon Film Review Intro", 4.85s, 66% voiced): the score genuinely varies with input — low-effort take 46.4 (10 segments), mid-effort take 40.2 (6 segments), vs. the pre-Phase-1 constant 85.5. **First calibration finding (feeds Task 1.1):** the overall score ranked the low-effort take *above* the mid-effort one (46.4 > 40.2), while segment count ranked them correctly. Diagnostics: both learner takes had ~2× the native's pitch variability (5.2 / 4.4 st std vs. native 2.3 st), and the learner's median F0 (~115Hz, male) sits near the 75Hz pitch floor where creak/octave artifacts are likely — supporting the timing component, K-constant calibration, and the `PITCH_FLOOR_HZ` diagnostic sweep. A 6-point gap on an uncalibrated scorer is not yet meaningful; the calibration harness is what makes it so.
+
+### Phase 1.5 (dsp-2) rationale — provenance of the scoring design
+
+Referenced by comments in `backend/dsp.py` ("swept empirically, Phase 1.5"): joint DTW frame distance `|Δsemitone| + λ·|Δrms_z|` (λ = 0.5 placeholder) so silences anchor the alignment (PRD 8.6.3); timing from the per-native-frame local slope of the warping path over a ~150ms window, deviation `|log2(slope)|`, `timing_score = 100·exp(−x/K_TIMING)`; overall = 0.55·pitch + 0.25·timing + 0.20·energy; `SYLLABLE_STRETCH` from slope runs (>1.5× or <0.67× for ≥ min run length); `PAUSE_MISSED`/`PAUSE_EXTRA` from comparing unvoiced runs ≥150ms; the 500ms shadow-lag regression test guards the 15% Sakoe-Chiba band (widen the band only if it fails). STEP_PENALTY swept empirically: 0.05+ under-warps genuine 2× syllable stretches on gently-sloped contours; 0.02 keeps real warps sharp while suppressing noise zig-zag.
+
+### Backlog (not scheduled)
+
+- **Segmental engine** (PRD 9.2): wav2vec2 XLSR phoneme recognition + Needleman-Wunsch vs. the canonical phoneme sequence. The designated approach if phoneme-level feedback is prioritized — **PLS-SVM explicitly rejected** (PRD 8.4).
+- **Liaison heuristic** (PRD 9.3): voicing/energy continuity across known liaison boundaries via the word timings; would partially restore `LIAISON_MISSED`.
+- Chatbot practice recommendations (PRD 9.1); STT word-correctness checking (out of scope per PRD 8.2).
+
+### Open assumptions log (carried, with current status)
+
+- **Scoring constants are placeholders until the calibration harness runs:** λ = 0.5, `K_TIMING`, 55/25/20 weights, slope thresholds (1.5×/0.67×), pause-run minimum (150ms), NCC bleed threshold (0.5). *Still true — graduates in Task 1.2.*
+- **Sakoe-Chiba band at 15% tolerates a 500ms shadow lag** after silence trim. *Verified — the regression test passes (Task 0.1).*
+- **Native-vs-native ≥ 85 target and two-speaker recruitment.** *Superseded by ADR 0002: owner-emulation corpus, gates 75/20.*
+- **MFA French model quality** on short conversational clips assumed adequate; fall back to word-level-only anchoring (hand-authored JSON) if poor.
+- **JWT in localStorage** (XSS caveat) and the **5-instance autoscaling cap** carry over from v1.1.0 unchanged.
+
+Reference: https://www.homepages.ucl.ac.uk/~uclyyix/ProsodyPro/
 
 ## Decision log
 

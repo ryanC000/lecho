@@ -1,7 +1,7 @@
 # L'Écho — Worker Core Algorithm (Phase 1.2)
 
-**Companion to:** `design_document.md` (v1.2.0), `implementation_plan.md`
-**Status:** Implemented — this doc describes the shipped **`dsp-1`** algorithm. The **`dsp-2`** revision (joint DTW cost, timing score from the warping path, `SYLLABLE_STRETCH` / `PAUSE_MISSED` / `PAUSE_EXTRA` tags, calibration protocol) is specced in PRD §8.6/§8.9 and `implementation_plan.md` Phase 1.5; the §6 "stretch" items and §8 open items below are superseded by those decisions (`LIAISON_MISSED` is descoped entirely, PRD §8.5).
+**Companion to:** `design_document.md` (v1.2.0), `master_implementation_plan.md`
+**Status:** Implemented — this doc describes the shipped **`dsp-1`** algorithm. The **`dsp-2`** revision (joint DTW cost, timing score from the warping path, `SYLLABLE_STRETCH` / `PAUSE_MISSED` / `PAUSE_EXTRA` tags, calibration protocol) is specced in PRD §8.6/§8.9 and `master_implementation_plan.md` (appendix, Phase 1.5); the §6 "stretch" items and §8 open items below are superseded by those decisions (`LIAISON_MISSED` is descoped entirely, PRD §8.5).
 
 The worker takes a `job_id`, loads the user recording and the practice's native reference, and produces an overall score (0–100), feedback segments, and a coordinate archive for the pitch-overlay visualizer. It runs in-process via FastAPI `BackgroundTasks` today; the algorithm is factored so the Phase 3 SQS/container split is a transport swap.
 

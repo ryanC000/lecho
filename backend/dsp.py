@@ -44,7 +44,7 @@ DTW_ENERGY_LAMBDA = 0.5     # weight of |Δrms_z| in the joint DTW frame cost (P
 # - DIAG_PULL: tiny attraction toward the scaled diagonal so the mandatory
 #   |n-m| insertions spread evenly through flat-cost regions instead of
 #   clumping wherever the backtracker happens to walk.
-#   Values swept empirically (see implementation_plan.md Phase 1.5): larger
+#   Values swept empirically (see master_implementation_plan.md appendix, Phase 1.5): larger
 #   STEP_PENALTY (0.05+) makes the path under-warp genuine 2x syllable
 #   stretches on gently-sloped contours; 0.02 keeps real warps sharp while
 #   still suppressing noise zig-zag.
