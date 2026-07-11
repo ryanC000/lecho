@@ -22,11 +22,10 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-import audio_meta
+import clip_ingest
 import database
 import dsp
-import storage
-from models import AudioAsset, Practice
+from models import Practice
 
 # A native clip must leave room for the user gates: recordings are bounded by
 # ±20% of the native duration AND the absolute 2-15s window (PRD FR-1), so the
@@ -102,36 +101,24 @@ def main():
             db.add(practice)
             db.flush()  # assign practice.id for the storage key
 
-        # 4. Store the converted WAV through the seam and link it.
+        # 4. Store the converted WAV through the clip-ingestion module and link it.
+        #    No expiry: native references don't expire. Duration was already
+        #    gated above on the source clip (with --force override).
         key = f"native/{practice.id}.wav"
         with tempfile.TemporaryDirectory() as tmp:
             tmp_wav = Path(tmp) / "converted.wav"
             snd.save(str(tmp_wav), "WAV")
             with open(tmp_wav, "rb") as f:
-                result = storage.save_upload(f, key)
-            meta = audio_meta.extract_metadata(storage.open_read(key))
+                asset = clip_ingest.ingest_clip(f, key, role="NATIVE_REFERENCE")
 
-        db.add(AudioAsset(
-            job_id=None,
-            owner_user_id=None,
-            role="NATIVE_REFERENCE",
-            storage_key=result.key,
-            storage_backend=result.backend,
-            size_bytes=result.size_bytes,
-            sha256=result.sha256,
-            duration_seconds=meta.duration_seconds,
-            sample_rate=meta.sample_rate,
-            channels=meta.channels,
-            codec=meta.codec,
-            expires_at=None,  # native references don't expire
-        ))
+        db.add(asset)
         practice.audio_url = key
-        practice.duration = round(meta.duration_seconds, 2)
+        practice.duration = round(asset.duration_seconds, 2)
         db.commit()
 
         print(f"Ingested '{args.audio.name}' -> practice {practice.id} ('{practice.title}')")
-        print(f"  key={key}  duration={meta.duration_seconds:.2f}s  "
-              f"sr={meta.sample_rate}  voiced={voiced_pct:.0f}% of trimmed frames")
+        print(f"  key={key}  duration={asset.duration_seconds:.2f}s  "
+              f"sr={asset.sample_rate}  voiced={voiced_pct:.0f}% of trimmed frames")
     finally:
         db.close()
 

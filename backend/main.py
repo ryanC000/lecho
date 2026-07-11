@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
 import uuid
 
-import models, schemas, auth, database, storage, audio_meta, migrations, worker_core
+import models, schemas, auth, clip_ingest, database, storage, migrations, worker_core
 from database import engine
 
 from typing import List
@@ -122,47 +122,25 @@ def create_job(
     db.commit()
     db.refresh(new_job)
 
-    # Persist the upload through the storage seam.
+    # Persist the upload through the clip-ingestion module (store, derive
+    # authoritative metadata, size + absolute duration gates, build the asset).
     asset_id = str(uuid.uuid4())
-    key = storage.upload_key(asset_id)
-    result = storage.save_upload(file.file, key)
-
-    # Guard size (after write we know the real byte count).
-    if result.size_bytes == 0 or result.size_bytes > MAX_UPLOAD_BYTES:
-        storage.delete(key)
-        worker_core.fail_job(db, new_job, "Uploaded audio is empty or exceeds the size limit.")
-        raise HTTPException(status_code=400, detail="Uploaded audio is empty or too large.")
-
-    # Extract authoritative metadata from the real bytes (not client-trusted).
     try:
-        meta = audio_meta.extract_metadata(storage.open_read(key))
-    except audio_meta.InvalidAudioError as exc:
-        storage.delete(key)
-        worker_core.fail_job(db, new_job, f"Invalid audio: {exc}")
-        raise HTTPException(status_code=400, detail="Uploaded file is not a readable WAV recording.")
-
-    # Absolute duration gate (PRD FR-1: 2s–15s), enforced on the derived duration.
-    if meta.duration_seconds < MIN_DURATION_S or meta.duration_seconds > MAX_DURATION_S:
-        storage.delete(key)
-        worker_core.fail_job(db, new_job, f"Duration {meta.duration_seconds:.2f}s outside {MIN_DURATION_S}-{MAX_DURATION_S}s.")
-        raise HTTPException(status_code=400, detail="Recording must be between 2 and 15 seconds long.")
-
-    asset = models.AudioAsset(
-        id=asset_id,
-        job_id=new_job.id,
-        owner_user_id=current_user.id,
-        role="USER_RECORDING",
-        storage_key=result.key,
-        storage_backend=result.backend,
-        size_bytes=result.size_bytes,
-        sha256=result.sha256,
-        duration_seconds=meta.duration_seconds,
-        sample_rate=meta.sample_rate,
-        channels=meta.channels,
-        codec=meta.codec,
-        client_reported_duration=user_audio_duration,
-        expires_at=datetime.utcnow() + timedelta(days=RETENTION_DAYS),
-    )
+        asset = clip_ingest.ingest_clip(
+            file.file,
+            storage.upload_key(asset_id),
+            role="USER_RECORDING",
+            asset_id=asset_id,
+            job_id=new_job.id,
+            owner_user_id=current_user.id,
+            client_reported_duration=user_audio_duration,
+            expires_at=datetime.utcnow() + timedelta(days=RETENTION_DAYS),
+            max_bytes=MAX_UPLOAD_BYTES,
+            duration_bounds=(MIN_DURATION_S, MAX_DURATION_S),
+        )
+    except clip_ingest.ClipRejectedError as exc:
+        worker_core.fail_job(db, new_job, exc.log_message)
+        raise HTTPException(status_code=400, detail=exc.detail)
     db.add(asset)
     db.commit()
 
