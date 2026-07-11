@@ -17,3 +17,8 @@ not synonyms. Decisions behind them live in `docs/adr/`.
   calibration tunes its constants but its structure is fixed for this phase.
 - **Bleed** — native-clip playback leaking into the user's mic during a shadow take;
   detected by normalized cross-correlation in the worker, hard-fails the job.
+- **Worker core** — the transport-independent scoring orchestrator (`worker_core.run`).
+  BackgroundTasks calls it in-process today; the Phase 3 SQS entrypoint is the second
+  adapter at the same seam.
+- **Clip ingestion** — bytes in → stored, validated, catalogued `AudioAsset`
+  (`clip_ingest.ingest_clip`), shared by user-recording uploads and native-clip ingest.
