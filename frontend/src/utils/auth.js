@@ -29,12 +29,10 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/** fetch() wrapper that attaches the bearer token. Throws on non-2xx. */
-export async function apiFetch(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...(options.headers || {}), ...authHeaders() },
-  });
+/** Core request helper: prefixes API_BASE and throws on non-2xx, using the
+ * backend's `.detail` as the error message and exposing `.status`. */
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, options);
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -47,17 +45,27 @@ export async function apiFetch(path, options = {}) {
   return res;
 }
 
+/** fetch() wrapper that attaches the bearer token. Throws on non-2xx. */
+export async function apiFetch(path, options = {}) {
+  return request(path, {
+    ...options,
+    headers: { ...(options.headers || {}), ...authHeaders() },
+  });
+}
+
+/** Unauthenticated GET that resolves to parsed JSON — used by router loaders. */
+export async function apiGet(path) {
+  const res = await request(path);
+  return res.json();
+}
+
 /** POST /auth/register — backend expects JSON {email, password}. */
 export async function register(email, password) {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await request('/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || 'Registration failed');
-  }
   return res.json();
 }
 
@@ -66,15 +74,11 @@ export async function login(email, password) {
   const form = new URLSearchParams();
   form.append('username', email);
   form.append('password', password);
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await request('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form,
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || 'Login failed');
-  }
   const data = await res.json();
   setToken(data.access_token);
   return data;

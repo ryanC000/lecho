@@ -5,7 +5,7 @@ import Library from './pages/Library';
 import Practice from './pages/Practice';
 import Results from './pages/Results';
 import AuthModal from './components/AuthModal';
-import { isLoggedIn, clearToken, API_BASE } from './utils/auth';
+import { isLoggedIn, clearToken, apiGet } from './utils/auth';
 import './index.css';
 
 // Global Layout Wrapper
@@ -105,17 +105,17 @@ const router = createBrowserRouter([
       { 
         index: true, 
         element: <Dashboard />,
-        loader: async () => fetch(`${API_BASE}/practices`).then(r => r.json())
+        loader: async () => apiGet('/practices')
       },
       {
         path: "library",
         element: <Library />,
-        loader: async () => fetch(`${API_BASE}/practices`).then(r => r.json())
+        loader: async () => apiGet('/practices')
       },
       {
         path: "practice/:id",
         element: <Practice />,
-        loader: async ({ params }) => fetch(`${API_BASE}/practices/${params.id}`).then(r => r.json())
+        loader: async ({ params }) => apiGet(`/practices/${params.id}`)
       },
       {
         // No loader: the job is genuinely async, so Results fetches GET /jobs/:jobId
