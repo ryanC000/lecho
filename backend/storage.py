@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from fastapi.responses import FileResponse
+
 # Backend identifiers persisted on AudioAsset.storage_backend so a
 # mixed-migration DB knows where each asset actually lives.
 BACKEND_LOCAL = "LOCAL"
@@ -56,8 +58,33 @@ def save_upload(file_obj, key: str) -> StorageResult:
 
 
 def get_path(key: str) -> Path:
-    """Resolve a key to a local path the worker can open. (S3: download to temp.)"""
+    """Materialize a key as a local path for processing that genuinely needs a
+    file on disk (the DSP loader). (S3: download to temp.) Existence checks,
+    reads, and HTTP serving must use exists()/open_read()/audio_response()
+    instead — those don't require materialization on a remote backend.
+    """
     return STORAGE_ROOT / key
+
+
+def exists(key: str) -> bool:
+    """Whether an object is stored at `key`. (S3: HEAD request.)"""
+    return (STORAGE_ROOT / key).exists()
+
+
+def open_read(key: str):
+    """Open the object at `key` for binary reading. Caller (or the consumer it
+    hands the stream to) is responsible for closing it. (S3: streaming GET.)
+    """
+    return open(STORAGE_ROOT / key, "rb")
+
+
+def audio_response(key: str, media_type: str = "audio/wav"):
+    """HTTP response serving the audio object at `key`.
+
+    Local: a FileResponse. (S3: becomes a RedirectResponse to a presigned GET —
+    the Phase 3 swap changes only this function, not the routes.)
+    """
+    return FileResponse(STORAGE_ROOT / key, media_type=media_type)
 
 
 def save_text(text: str, key: str) -> str:
@@ -82,8 +109,3 @@ def delete(key: str) -> None:
     path = STORAGE_ROOT / key
     if path.exists():
         path.unlink()
-
-
-def presign_put(key: str):
-    """Return a presigned upload URL. No-op locally; real URL in Phase 3 (S3)."""
-    return None

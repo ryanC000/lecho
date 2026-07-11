@@ -9,7 +9,6 @@ avoid pulling in a heavy audio dependency this early.
 """
 import wave
 from dataclasses import dataclass
-from pathlib import Path
 
 
 class InvalidAudioError(ValueError):
@@ -24,13 +23,19 @@ class AudioMeta:
     codec: str
 
 
-def extract_metadata(path: Path) -> AudioMeta:
+def extract_metadata(stream) -> AudioMeta:
+    """Read WAV metadata from a binary file-like object (e.g. storage.open_read).
+
+    Consumes and closes the stream, so callers can pass an opened handle inline
+    without a local path ever leaving the storage seam.
+    """
     try:
-        with wave.open(str(path), "rb") as wf:
-            frames = wf.getnframes()
-            rate = wf.getframerate()
-            channels = wf.getnchannels()
-            sample_width = wf.getsampwidth()  # bytes per sample
+        with stream:
+            with wave.open(stream, "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                channels = wf.getnchannels()
+                sample_width = wf.getsampwidth()  # bytes per sample
     except (wave.Error, EOFError) as exc:
         raise InvalidAudioError(f"Not a readable PCM WAV file: {exc}") from exc
 

@@ -106,6 +106,9 @@ class AnalysisSegment(Base):
     timestamp_end = Column(Float, nullable=False)
     feedback_tag = Column(String)
     explanation = Column(String)
-    s3_coordinates_json_path = Column(String)
+    # Backend-agnostic storage key of the job's coordinate archive. The DB
+    # column keeps its historical name (s3_coordinates_json_path) to avoid a
+    # SQLite table rebuild — only the ORM attribute is renamed.
+    coordinates_key = Column("s3_coordinates_json_path", String)
 
     job = relationship("ProsodyJob", back_populates="segments")

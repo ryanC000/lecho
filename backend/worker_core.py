@@ -42,8 +42,7 @@ def run(job_id: str, session_factory):
         if not user_asset:
             fail_job(db, job, "No user recording asset found for job.")
             return
-        user_path = storage.get_path(user_asset.storage_key)
-        if not user_path.exists():
+        if not storage.exists(user_asset.storage_key):
             fail_job(db, job, f"Stored user audio missing at {user_asset.storage_key}.")
             return
 
@@ -55,15 +54,15 @@ def run(job_id: str, session_factory):
         if not native_key:
             fail_job(db, job, "This practice isn't ready for scoring yet — its reference audio hasn't been added.")
             return
-        native_path = storage.get_path(native_key)
-        if not native_path.exists():
+        if not storage.exists(native_key):
             fail_job(db, job, f"Native reference audio missing at {native_key}.")
             return
 
-        # 3. Run the pure DSP pipeline (no DB/storage inside dsp.py).
+        # 3. Run the pure DSP pipeline (no DB/storage inside dsp.py). get_path
+        #    materializes each clip locally for the DSP loader (S3: temp file).
         try:
-            native_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(native_path)))
-            user_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(user_path)))
+            native_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(storage.get_path(native_key))))
+            user_feat = dsp.trim_silence(dsp.extract_features(dsp.load_mono_16k(storage.get_path(user_asset.storage_key))))
             aligned = dsp.align(native_feat, user_feat)
             overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             segments = dsp.make_segments(aligned)
@@ -85,7 +84,7 @@ def run(job_id: str, session_factory):
                     timestamp_end=seg["timestamp_end"],
                     feedback_tag=seg["feedback_tag"],
                     explanation=seg["explanation"],
-                    s3_coordinates_json_path=archive_key,
+                    coordinates_key=archive_key,
                 )
             )
 

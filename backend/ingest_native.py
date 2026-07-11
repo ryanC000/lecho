@@ -109,7 +109,7 @@ def main():
             snd.save(str(tmp_wav), "WAV")
             with open(tmp_wav, "rb") as f:
                 result = storage.save_upload(f, key)
-            meta = audio_meta.extract_metadata(storage.get_path(key))
+            meta = audio_meta.extract_metadata(storage.open_read(key))
 
         db.add(AudioAsset(
             job_id=None,

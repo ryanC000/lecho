@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
@@ -64,10 +63,9 @@ def get_practice_audio(practice_id: int, db: Session = Depends(database.get_db))
         raise HTTPException(status_code=404, detail="Practice not found")
     if not practice.audio_url:
         raise HTTPException(status_code=404, detail="This practice has no reference audio yet.")
-    path = storage.get_path(practice.audio_url)
-    if not path.exists():
+    if not storage.exists(practice.audio_url):
         raise HTTPException(status_code=404, detail="Reference audio file is missing from storage.")
-    return FileResponse(path, media_type="audio/wav")
+    return storage.audio_response(practice.audio_url)
 
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
@@ -137,7 +135,7 @@ def create_job(
 
     # Extract authoritative metadata from the real bytes (not client-trusted).
     try:
-        meta = audio_meta.extract_metadata(storage.get_path(key))
+        meta = audio_meta.extract_metadata(storage.open_read(key))
     except audio_meta.InvalidAudioError as exc:
         storage.delete(key)
         worker_core.fail_job(db, new_job, f"Invalid audio: {exc}")
