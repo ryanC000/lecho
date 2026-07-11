@@ -995,6 +995,26 @@
     @apply flex justify-center py-8;
   }
 
+  .sub-scores {
+    @apply flex justify-center gap-8 pb-6;
+  }
+
+  .sub-score {
+    @apply flex flex-col items-center;
+  }
+
+  .sub-score-value {
+    @apply text-2xl font-semibold;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  .sub-score-label {
+    @apply text-xs font-medium uppercase tracking-wide;
+    color: var(--color-ink-light);
+    font-family: var(--font-sans);
+  }
+
   .feedback-list {
     @apply flex flex-col gap-3;
   }

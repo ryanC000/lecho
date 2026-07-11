@@ -97,6 +97,22 @@ export default function Results() {
         <AccuracyRing score={job.score ?? 0} size={200} strokeWidth={14} />
       </section>
 
+      {/* ── Per-axis sub-scores (null for jobs scored before dsp-2 persistence) ── */}
+      {job.pitch_score != null && (
+        <section className="sub-scores">
+          {[
+            ['Pitch', job.pitch_score],
+            ['Timing', job.timing_score],
+            ['Energy', job.energy_score],
+          ].map(([label, value]) => (
+            <div key={label} className="sub-score">
+              <span className="sub-score-value">{value}</span>
+              <span className="sub-score-label">{label}</span>
+            </div>
+          ))}
+        </section>
+      )}
+
       {/* ── Transcript + Translation ── */}
       {job.transcript && (
         <section className="context-banner flat-section">

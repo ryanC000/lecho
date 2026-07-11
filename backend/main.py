@@ -7,7 +7,7 @@ from datetime import timedelta, datetime
 import json
 import uuid
 
-import models, schemas, auth, database, storage, audio_meta, dsp
+import models, schemas, auth, database, storage, audio_meta, dsp, migrations
 from database import engine
 
 from typing import List
@@ -20,8 +20,9 @@ RETENTION_DAYS = 30                   # PRD Section 4 storage lifecycle
 
 # Creates all the API endpoints 
 
-# Create tables (for local MVP)
+# Create tables (for local MVP), then apply idempotent column additions
 models.Base.metadata.create_all(bind=engine)
+migrations.run(engine)
 
 app = FastAPI(title="L'Écho API")
 
@@ -168,6 +169,9 @@ def worker_task(job_id: str):
         # 6. Finalize the job.
         job.status = "SUCCESS"
         job.overall_match_score = round(overall, 1)
+        job.pitch_score = round(pitch_score, 1)
+        job.timing_score = round(timing_score, 1)
+        job.energy_score = round(energy_score, 1)
         job.algo_version = ALGO_VERSION
         db.commit()
     except Exception as exc:  # never let a background failure vanish silently
@@ -277,6 +281,9 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "id": job.id,
         "status": job.status,
         "score": job.overall_match_score,
+        "pitch_score": job.pitch_score,
+        "timing_score": job.timing_score,
+        "energy_score": job.energy_score,
         "error_message": job.error_message,
         "practice_id": job.practice_id,
         "transcript": job.practice.transcript if job.practice else None,
