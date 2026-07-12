@@ -544,8 +544,8 @@
   }
 
   .play-pause-btn.playing {
-    border-color: var(--color-accent-violet);
-    color: var(--color-accent-violet);
+    border-color: var(--color-accent-warm);
+    color: var(--color-accent-warm);
   }
 
   .playback {
@@ -586,7 +586,7 @@
   }
 
   .mode-btn.active {
-    background-color: var(--color-accent-violet);
+    background-color: var(--color-accent-warm);
     color: white;
   }
 
@@ -974,13 +974,13 @@
   }
 
   .translate-all-btn:hover {
-    border-color: var(--color-accent-violet);
-    color: var(--color-accent-violet);
+    border-color: var(--color-accent-warm);
+    color: var(--color-accent-warm);
   }
 
   .translate-all-btn.active {
-    background: var(--color-accent-violet);
-    border-color: var(--color-accent-violet);
+    background: var(--color-accent-warm);
+    border-color: var(--color-accent-warm);
     @apply text-white;
   }
 
