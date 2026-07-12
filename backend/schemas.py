@@ -63,6 +63,7 @@ class SegmentResponse(BaseModel):
 class JobStatusResponse(BaseModel):
     id: str
     status: str
+    mode: str = "solo"
     score: Optional[float] = None
     pitch_score: Optional[float] = None
     timing_score: Optional[float] = None

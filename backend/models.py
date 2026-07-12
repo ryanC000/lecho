@@ -46,6 +46,7 @@ class ProsodyJob(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(Integer, ForeignKey("users.id"))
     practice_id = Column(Integer, ForeignKey("practices.id"))
+    mode = Column(String, nullable=False, default="solo")  # solo | shadow (PRD 8.7)
     status = Column(String, default="PENDING")
     overall_match_score = Column(Float)
     pitch_score = Column(Float, nullable=True)      # per-axis sub-scores (dsp-2); null for pre-dsp-2 rows

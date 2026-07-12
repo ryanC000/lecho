@@ -76,11 +76,14 @@ def _auth_headers(client, email="tester@example.com"):
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
-def _post_job(client, headers, wav_bytes, duration):
+def _post_job(client, headers, wav_bytes, duration, mode=None):
+    data = {"practice_id": client.practice_id, "user_audio_duration": duration}
+    if mode is not None:
+        data["mode"] = mode
     return client.post(
         "/jobs",
         headers=headers,
-        data={"practice_id": client.practice_id, "user_audio_duration": duration},
+        data=data,
         files={"file": ("take.wav", wav_bytes, "audio/wav")},
     )
 
@@ -101,6 +104,7 @@ def test_lifecycle_solo_job_scores_near_100(client):
         assert body[axis] is not None and body[axis] >= 90, (axis, body[axis])
     assert body["transcript"] == "bonjour tout le monde"
     assert isinstance(body["segments"], list)
+    assert body["mode"] == "solo"  # mode omitted on POST → solo (backward compatible)
 
 
 def test_job_requires_auth(client):
@@ -141,6 +145,50 @@ def test_unreadable_audio_rejected(client):
     r = _post_job(client, headers, b"definitely not a wav", NATIVE_DURATION_S)
     assert r.status_code == 400
     assert "readable WAV" in r.json()["detail"]
+
+
+# --- Shadow mode (master-plan ticket 07) -------------------------------------
+
+def test_invalid_mode_rejected(client):
+    headers = _auth_headers(client)
+    r = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S, mode="duet")
+    assert r.status_code == 400
+    assert "mode" in r.json()["detail"]
+
+
+def test_shadow_client_duration_gate(client):
+    # A native-length take (no +1s tail) fails the shadow gate on the
+    # client-reported duration before any bytes are inspected.
+    headers = _auth_headers(client)
+    r = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S, mode="shadow")
+    assert r.status_code == 400
+    assert "Shadow recording duration" in r.json()["detail"]
+
+
+def test_shadow_server_duration_gate(client):
+    # Client-reported duration passes the fast-fail (native + 1s), but the
+    # real bytes are native-length — the server-derived check must catch it.
+    headers = _auth_headers(client)
+    r = _post_job(
+        client, headers, client.native_wav.read_bytes(),
+        NATIVE_DURATION_S + 1.0, mode="shadow",
+    )
+    assert r.status_code == 400
+    assert "Shadow recording duration" in r.json()["detail"]
+
+
+def test_shadow_job_accepted_and_scored(client, tmp_path):
+    # A correctly-sized shadow take (native + 1s tail) whose content is the
+    # learner's own voice (a chirp in a different register — no bleed).
+    headers = _auth_headers(client)
+    take = tmp_path / "shadow_take.wav"
+    _write_sine_wav(take, freq_hz=210.0, duration_s=NATIVE_DURATION_S + 1.0, freq_end_hz=250.0)
+    r = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S + 1.0, mode="shadow")
+    assert r.status_code == 202, r.text
+
+    body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
+    assert body["mode"] == "shadow"
+    assert body["status"] == "SUCCESS", body["error_message"]
 
 
 # --- Auth edges -------------------------------------------------------------

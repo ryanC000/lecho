@@ -18,6 +18,34 @@ MAX_DURATION_S = 15.0
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB — a 15s mono 16-bit WAV is well under this
 RETENTION_DAYS = 30                   # PRD Section 4 storage lifecycle
 
+# Shadow-mode duration gate (PRD 8.7): a shadow take runs the native clip's
+# length plus a fixed tail, so its expected duration is native + SHADOW_TAIL_S
+# within ±SHADOW_TOLERANCE_S (placeholder until calibration, Task 1.2).
+SHADOW_TAIL_S = 1.0
+SHADOW_TOLERANCE_S = 0.5
+
+ALLOWED_JOB_MODES = {"solo", "shadow"}
+
+
+def mode_duration_error(mode: str, duration: float, native_duration: float):
+    """Per-mode relative duration gate. Returns the user-facing rejection
+    message, or None if the duration passes. Applied twice per job: to the
+    client-reported duration as a fast-fail, then to the server-derived
+    duration as the authoritative check. The absolute 2-15s gate is separate
+    (clip_ingest) and identical for both modes.
+    """
+    if mode == "shadow":
+        expected = native_duration + SHADOW_TAIL_S
+        if abs(duration - expected) > SHADOW_TOLERANCE_S:
+            return (
+                f"Shadow recording duration deviates too much from the expected "
+                f"length ({expected:.1f}s = native + {SHADOW_TAIL_S:.0f}s tail)."
+            )
+        return None
+    if duration < native_duration * 0.8 or duration > native_duration * 1.2:
+        return "Recording duration deviates too much from native reference."
+    return None
+
 # Creates all the API endpoints
 
 @asynccontextmanager
@@ -101,23 +129,27 @@ def create_job(
     background_tasks: BackgroundTasks,
     practice_id: int = Form(...),
     user_audio_duration: float = Form(...),
+    mode: str = Form("solo"),
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    if mode not in ALLOWED_JOB_MODES:
+        raise HTTPException(status_code=400, detail="mode must be 'solo' or 'shadow'.")
+
     # Verify the native sample exists
     sample = db.query(models.Practice).filter(models.Practice.id == practice_id).first()
     if not sample:
         raise HTTPException(status_code=404, detail="Practice not found")
 
-    # Relative duration gate (±20% of native), matching the client-side check.
-    lower_bound = sample.duration * 0.8
-    upper_bound = sample.duration * 1.2
-    if user_audio_duration < lower_bound or user_audio_duration > upper_bound:
-        raise HTTPException(status_code=400, detail="Recording duration deviates too much from native reference.")
+    # Per-mode relative duration gate on the client-reported duration
+    # (fast-fail; re-checked on the server-derived duration below).
+    gate_error = mode_duration_error(mode, user_audio_duration, sample.duration)
+    if gate_error:
+        raise HTTPException(status_code=400, detail=gate_error)
 
     # Create the job first so we can attach the asset to it.
-    new_job = models.ProsodyJob(user_id=current_user.id, practice_id=sample.id)
+    new_job = models.ProsodyJob(user_id=current_user.id, practice_id=sample.id, mode=mode)
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
@@ -141,6 +173,14 @@ def create_job(
     except clip_ingest.ClipRejectedError as exc:
         worker_core.fail_job(db, new_job, exc.log_message)
         raise HTTPException(status_code=400, detail=exc.detail)
+
+    # Authoritative per-mode gate on the duration derived from the real bytes
+    # (the client-reported value above is not trusted).
+    gate_error = mode_duration_error(mode, asset.duration_seconds, sample.duration)
+    if gate_error:
+        storage.delete(asset.storage_key)
+        worker_core.fail_job(db, new_job, gate_error)
+        raise HTTPException(status_code=400, detail=gate_error)
     db.add(asset)
     db.commit()
 
@@ -163,6 +203,7 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
     return {
         "id": job.id,
         "status": job.status,
+        "mode": job.mode,
         "score": job.overall_match_score,
         "pitch_score": job.pitch_score,
         "timing_score": job.timing_score,

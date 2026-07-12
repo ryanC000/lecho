@@ -12,6 +12,8 @@ MIGRATIONS = [
     ("prosody_jobs", "pitch_score", "FLOAT"),
     ("prosody_jobs", "timing_score", "FLOAT"),
     ("prosody_jobs", "energy_score", "FLOAT"),
+    # DEFAULT so pre-shadow rows read as solo (they were).
+    ("prosody_jobs", "mode", "TEXT NOT NULL DEFAULT 'solo'"),
 ]
 
 
