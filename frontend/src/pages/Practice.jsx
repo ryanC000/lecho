@@ -13,12 +13,23 @@ const levelColors = {
   C1: 'var(--color-level-c1)',
 };
 
+// Capture mode, persisted for the session (PRD 8.7: shadow is the default).
+const MODE_KEY = 'lecho_practice_mode';
+
 export default function Practice() {
   const { id } = useParams();
   const navigate = useNavigate();
   const practice = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
   const [uploadError, setUploadError] = useState(null);
+  const [mode, setMode] = useState(() =>
+    sessionStorage.getItem(MODE_KEY) === 'solo' ? 'solo' : 'shadow'
+  );
+
+  const changeMode = (next) => {
+    setMode(next);
+    sessionStorage.setItem(MODE_KEY, next);
+  };
 
   // Native clips are served by the backend; no reference audio means the
   // practice isn't ready — never substitute a synthetic tone.
@@ -26,7 +37,7 @@ export default function Practice() {
     ? `${API_BASE}/practices/${practice.id}/audio`
     : null;
 
-  const handleUpload = async (audioBlob, duration) => {
+  const handleUpload = async (audioBlob, duration, takeMode = 'solo') => {
     setUploadError(null);
 
     // Local playback of what we recorded.
@@ -43,6 +54,7 @@ export default function Practice() {
     formData.append('file', audioBlob, 'recording.wav');
     formData.append('practice_id', String(practice.id));
     formData.append('user_audio_duration', String(duration));
+    formData.append('mode', takeMode);
 
     try {
       const res = await apiFetch('/jobs', { method: 'POST', body: formData });
@@ -136,7 +148,35 @@ export default function Practice() {
       {/* ── Recording (only when there's a real reference to score against) ── */}
       {nativeAudioUrl && (
         <section className="flat-section">
-          <Recorder nativeDuration={practice.duration} onUpload={handleUpload} />
+          <div className="mode-toggle" role="radiogroup" aria-label="Practice mode">
+            <button
+              role="radio"
+              aria-checked={mode === 'shadow'}
+              className={`mode-btn${mode === 'shadow' ? ' active' : ''}`}
+              onClick={() => changeMode('shadow')}
+            >
+              Shadow
+            </button>
+            <button
+              role="radio"
+              aria-checked={mode === 'solo'}
+              className={`mode-btn${mode === 'solo' ? ' active' : ''}`}
+              onClick={() => changeMode('solo')}
+            >
+              Solo
+            </button>
+          </div>
+          <p className="mode-hint">
+            {mode === 'shadow'
+              ? 'The native clip plays while you record — speak along with it.'
+              : 'Record on your own, then compare with the native clip.'}
+          </p>
+          <Recorder
+            nativeDuration={practice.duration}
+            nativeAudioUrl={nativeAudioUrl}
+            mode={mode}
+            onUpload={handleUpload}
+          />
           {uploadError && <div className="alert-error">{uploadError}</div>}
           {userAudioUrl && (
             <div className="playback">

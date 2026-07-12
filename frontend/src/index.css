@@ -564,6 +564,38 @@
     @apply flex items-center gap-3;
   }
 
+  /* ── Practice mode toggle (Shadow / Solo) ── */
+  .mode-toggle {
+    @apply inline-flex self-start rounded-full p-1 gap-1;
+    background: var(--color-card);
+    border: 1px solid var(--color-cream-border);
+  }
+
+  .mode-btn {
+    @apply rounded-full px-4 py-1.5 text-sm;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-light);
+    box-shadow: none;
+  }
+
+  .mode-btn:hover {
+    @apply translate-y-0;
+    box-shadow: none;
+    color: var(--color-ink);
+  }
+
+  .mode-btn.active {
+    background-color: var(--color-accent-violet);
+    color: white;
+  }
+
+  .mode-hint {
+    font-family: var(--font-hand);
+    @apply text-sm mt-2 mb-4;
+    color: var(--color-ink-light);
+  }
+
   /* ── Recording status: pulsing indicator + prominent timer ── */
   .recording-status {
     @apply flex items-center justify-between rounded-2xl px-5 py-3;
