@@ -9,6 +9,7 @@ ingestion gates and auth/ownership rejections.
 Assertions for shadow gates, /coordinates, and logout revocation activate with
 their tickets (master-plan 07/11/13) — add them here when those land.
 """
+import wave
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ import database
 import main
 import models
 import storage
+import worker_core
 from test_dsp import _write_sine_wav
 
 PASSWORD = "test-password-1"
@@ -189,6 +191,30 @@ def test_shadow_job_accepted_and_scored(client, tmp_path):
     body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
     assert body["mode"] == "shadow"
     assert body["status"] == "SUCCESS", body["error_message"]
+
+
+def test_shadow_bleed_rejected_with_headphones_message(client, tmp_path):
+    # A speakers-not-headphones take: the upload literally contains the native
+    # clip plus the 1s tail, so it passes both duration gates but the worker's
+    # bleed gate must fail it — retryable, with the exact headphones message.
+    # (Solo never runs this check: the lifecycle test above submits these same
+    # native bytes as a solo take and must keep scoring SUCCESS.)
+    headers = _auth_headers(client)
+    with wave.open(str(client.native_wav)) as r:
+        params = r.getparams()
+        native_frames = r.readframes(r.getnframes())
+    bled = tmp_path / "bled_take.wav"
+    with wave.open(str(bled), "wb") as w:
+        w.setparams(params)
+        w.writeframes(native_frames + b"\x00" * params.framerate * params.sampwidth)
+
+    r = _post_job(client, headers, bled.read_bytes(), NATIVE_DURATION_S + 1.0, mode="shadow")
+    assert r.status_code == 202, r.text
+
+    body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
+    assert body["status"] == "FAILED"
+    assert body["retryable"] is True
+    assert body["error_message"] == worker_core.BLEED_MESSAGE
 
 
 # --- Auth edges -------------------------------------------------------------

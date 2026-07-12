@@ -19,6 +19,13 @@ import storage
 
 ALGO_VERSION = "dsp-2"
 
+# User-facing failure for a detected bleed (master-plan Task 3.2). Retryable —
+# the fix is on the user's side, so re-recording can help.
+BLEED_MESSAGE = (
+    "It sounds like the native audio was picked up by your microphone. "
+    "Please use headphones for shadow takes, or switch to Solo mode."
+)
+
 
 def fail_job(db, job: models.ProsodyJob, message: str):
     job.status = "FAILED"
@@ -61,8 +68,21 @@ def run(job_id: str, session_factory):
         # 3. Run the pure DSP pipeline (no DB/storage inside dsp.py). get_path
         #    materializes each clip locally for the DSP loader (S3: temp file).
         try:
-            native_feat = dsp.features_for(storage.get_path(native_key))
-            user_feat = dsp.features_for(storage.get_path(user_asset.storage_key))
+            native_path = storage.get_path(native_key)
+            user_path = storage.get_path(user_asset.storage_key)
+            # Shadow takes: hard bleed gate on the raw signals BEFORE any
+            # feature extraction — a bled take must never be scored. (The
+            # extra decode for the gate is negligible next to the pipeline.)
+            if job.mode == "shadow":
+                peak_ncc = dsp.detect_bleed(
+                    dsp.load_mono_16k(native_path).values[0],
+                    dsp.load_mono_16k(user_path).values[0],
+                    dsp.TARGET_SR,
+                )
+                if peak_ncc > dsp.NCC_BLEED_THRESHOLD:
+                    raise dsp.BleedDetectedError(BLEED_MESSAGE)
+            native_feat = dsp.features_for(native_path)
+            user_feat = dsp.features_for(user_path)
             aligned = dsp.align(native_feat, user_feat)
             overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             segments = dsp.make_segments(aligned)

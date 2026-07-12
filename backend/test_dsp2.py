@@ -240,3 +240,53 @@ def test_pause_extra(tmp_path):
 
     aligned = _align(native_wav, user_wav)
     assert "PAUSE_EXTRA" in _tags(aligned)
+
+
+# --- 7. Bleed gate: playback leakage vs. an independent imitation -----------
+
+def _chirp_samples(f_start_hz: float, f_end_hz: float, dur_s: float,
+                   sr: int = 16000, amplitude: float = 0.5) -> np.ndarray:
+    """Raw float64 samples of a linear chirp (detect_bleed is pure on arrays,
+    so these tests skip the WAV round-trip entirely)."""
+    t = np.arange(int(dur_s * sr)) / sr
+    phase = 2 * np.pi * (f_start_hz * t + (f_end_hz - f_start_hz) / (2 * dur_s) * t ** 2)
+    return amplitude * np.sin(phase)
+
+
+def test_bleed_detected_when_native_leaks_into_take():
+    """Speakers-instead-of-headphones: the user's mic picks up the native
+    playback itself. The take is the native signal (delayed by a plausible
+    playback-start offset) mixed into room noise sitting 10 dB down — actual
+    leakage correlates strongly in the waveform domain, so the NCC peak must
+    clear the bleed threshold.
+    """
+    sr = dsp.TARGET_SR
+    rng = np.random.default_rng(42)
+    native = _chirp_samples(130.0, 170.0, 2.5)
+
+    user = np.zeros(int(3.5 * sr))  # native + 1s tail, the shadow take shape
+    lag = int(0.25 * sr)
+    user[lag : lag + len(native)] += native
+    noise_rms = float(np.std(native)) * 10 ** (-10 / 20)
+    user += rng.normal(0.0, noise_rms, len(user))
+
+    peak = dsp.detect_bleed(native, user, sr)
+    assert peak > dsp.NCC_BLEED_THRESHOLD
+
+
+def test_independent_take_not_flagged_as_bleed():
+    """A learner *imitating* the clip shares no waveform with it: different
+    voice (register), own amplitude rhythm, own pauses. Such a take must NOT
+    trip the bleed gate — that is the entire discrimination the threshold
+    encodes (imitation correlates weakly, playback correlates strongly).
+    """
+    sr = dsp.TARGET_SR
+    native = _chirp_samples(130.0, 170.0, 2.5)
+
+    voice = _chirp_samples(210.0, 250.0, 3.5)  # different register
+    t = np.arange(len(voice)) / sr
+    voice *= 0.55 + 0.45 * np.sin(2 * np.pi * 3.1 * t)  # syllable-rate envelope
+    voice[int(1.6 * sr) : int(1.9 * sr)] = 0.0           # the learner's own pause
+
+    peak = dsp.detect_bleed(native, voice, sr)
+    assert peak < dsp.NCC_BLEED_THRESHOLD
