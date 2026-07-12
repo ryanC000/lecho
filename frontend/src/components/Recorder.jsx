@@ -3,6 +3,7 @@ import { blobToWav } from '../utils/audio';
 import LiveWaveform from './LiveWaveform';
 
 // Client mirror of the server's per-mode duration gates (backend main.py).
+const SOLO_TOLERANCE_FRAC = 0.5;
 const SHADOW_TAIL_S = 1.0;
 const SHADOW_TOLERANCE_S = 0.5;
 // Session flag: the user confirmed they're on headphones for shadow takes.
@@ -214,10 +215,10 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
             return;
           }
         } else {
-          const lowerBound = nativeDuration * 0.8;
-          const upperBound = nativeDuration * 1.2;
+          const lowerBound = nativeDuration * (1 - SOLO_TOLERANCE_FRAC);
+          const upperBound = nativeDuration * (1 + SOLO_TOLERANCE_FRAC);
           if (durationInSeconds < lowerBound || durationInSeconds > upperBound) {
-            setError(`Recording duration (${durationInSeconds}s) must be within ±20% of native sample (${nativeDuration}s).`);
+            setError(`Recording duration (${durationInSeconds}s) must be within ±${SOLO_TOLERANCE_FRAC * 100}% of native sample (${nativeDuration}s).`);
             return;
           }
         }

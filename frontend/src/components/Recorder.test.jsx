@@ -70,14 +70,14 @@ describe('Recorder', () => {
     expect(screen.getByText('Start Recording')).toBeInTheDocument();
   });
 
-  it('rejects a take outside ±20% of the native duration and does not upload', async () => {
+  it('rejects a take outside ±50% of the native duration and does not upload', async () => {
     blobToWav.mockResolvedValue({ blob: new Blob(), duration: 8.0 });
     const onUpload = vi.fn();
     render(<Recorder nativeDuration={5} onUpload={onUpload} />);
 
     await recordOnce();
 
-    expect(await screen.findByText(/must be within ±20%/)).toBeInTheDocument();
+    expect(await screen.findByText(/must be within ±50%/)).toBeInTheDocument();
     expect(onUpload).not.toHaveBeenCalled();
   });
 
@@ -90,7 +90,7 @@ describe('Recorder', () => {
 
     await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
     expect(onUpload).toHaveBeenCalledWith(expect.anything(), 5.2, 'solo');
-    expect(screen.queryByText(/must be within ±20%/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/must be within ±50%/)).not.toBeInTheDocument();
   });
 
   it('surfaces a denied microphone', async () => {
