@@ -61,7 +61,7 @@ Binding decisions (owner, 2026-07-07): Phase 3 spec-only; human recordings via e
 ### Task 1.1 — Build the calibration harness (before the recordings exist)
 - **Goal:** a CLI that, given a corpus manifest, checks owner-emulation ≥ 75 and monotone ≥ 20 points lower, and helps tune constants (ADR 0002 — no second native speaker exists; leniency is bounded by the discrimination margin).
 - **Files:** new `backend/calibrate.py`; new `backend/test_calibration.py` (pytest, `skipif` manifest missing).
-- **Manifest contract** — `native_audio/calibration/manifest.json` (dir already gitignored), paths relative to the manifest, ≥3 entries required for graduation:
+- **Manifest contract** — `native_audio/manifest.json` (dir already gitignored), paths relative to the manifest, 2 entries required for graduation (reduced from ≥3 — Decision log 2026-07-12):
   ```json
   [{"practice_id": 7, "reference": "p7_native.wav", "emulation": "p7_emulation.wav", "monotone": "p7_monotone.wav", "low_effort": "p7_low_effort.wav"}]
   ```
@@ -71,7 +71,7 @@ Binding decisions (owner, 2026-07-07): Phase 3 spec-only; human recordings via e
 - **Complications:** the Phase 1R real-audio finding (low-effort take outscored mid-effort; learner median F0 ~115Hz near the 75Hz pitch floor → creak/octave-error risk) means `--tune` should also try `PITCH_FLOOR_HZ` ∈ {60, 65, 75} as a diagnostic. Record the outcome in the Decision log.
 
 ### 🧑 HUMAN GATE H1 — record the calibration corpus
-- **Owner must record, for ≥3 practices:** a best-effort **emulation take** — recorded shadow-style, listening to the native clip on headphones while speaking along — and a deliberate **monotone take** of the same line (plus one **low-effort take** for at least one practice), as WAVs in `native_audio/calibration/`, and fill `manifest.json` (ADR 0002). Headphones are mandatory: these WAVs bypass the app's bleed gate. ~~Practice 7's original reference may need re-ingesting first~~ — verified present and serving 2026-07-11 (`storage/native/7.wav`, 155 KB, plays via `GET /practices/7/audio`); no re-ingest needed.
+- **Owner must record, for 2 practices** *(reduced from ≥3 — Decision log 2026-07-12)***:** a best-effort **emulation take** — recorded shadow-style, listening to the native clip on headphones while speaking along — and a deliberate **monotone take** of the same line (plus one **low-effort take** for at least one practice), as WAVs in `native_audio/`, and fill `manifest.json` (ADR 0002). **Done 2026-07-12** — practices 7 ("napoleon") and 2 ("napoleon2"), both with low-effort takes; manifest at `native_audio/manifest.json`. Headphones are mandatory: these WAVs bypass the app's bleed gate. ~~Practice 7's original reference may need re-ingesting first~~ — verified present and serving 2026-07-11 (`storage/native/7.wav`, 155 KB, plays via `GET /practices/7/audio`); no re-ingest needed.
 - **Blocks:** Task 1.2 only. All other tracks proceed.
 
 ### Task 1.2 — Run calibration, graduate the constants *(blocked on H1)*
@@ -272,6 +272,8 @@ Reference: https://www.homepages.ucl.ac.uk/~uclyyix/ProsodyPro/
 ## Decision log
 
 *(Append a dated line whenever a placeholder constant graduates or a decision is resolved.)*
+
+- **2026-07-12 — Calibration corpus reduced from ≥3 to 2 practices** (owner time constraint): practice 7 ("napoleon") and practice 2 ("napoleon2"), each with emulation + monotone + low-effort takes; manifest at `native_audio/manifest.json`. Graduation gates unchanged (emulation ≥ 75, margin ≥ 20 — ADR 0002). Caveat: practice 7's emulation take is the 2026-07-05 (pre-ADR-0002) recording — re-record shadow-style if it fails the gate during ticket 04.
 
 - 2026-07-07 — Plan created. Owner decisions: Phase 3 spec-only; human recording gates; MFA via conda; real Google OAuth (GIS ID-token flow).
 - 2026-07-11 — Task 0.1 done (`338eb58`): dsp-2 baseline frozen with trim-time re-normalization of `f0_semitone`/`rms_z` and median-slope tempo estimate (ADR 0001).
