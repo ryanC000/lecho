@@ -71,3 +71,4 @@ Thumbs.db
 package-lock.json
 .playwright-mcp
 .claude/
+skills-lock.json
