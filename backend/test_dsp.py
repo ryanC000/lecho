@@ -118,7 +118,12 @@ def test_pitch_offset_scores_lower_than_identical(tmp_path):
     # contour difference must produce a clearly, deterministically lower score.
     assert bad_pitch < good_pitch
     assert bad_overall < good_overall
-    assert good_pitch - bad_pitch > 20  # the gap should be unmistakable, not noise
+    # The gap should be unmistakable, not noise. Score points shrink as
+    # SCORE_K_PITCH_SEMITONES grows (calibration keeps moving it), so pin the
+    # gap in distance units: invert score = 100*exp(-rmse/K) and require the
+    # flat take to sit >= 1 semitone RMSE further from the native contour.
+    rmse_gap = dsp.SCORE_K_PITCH_SEMITONES * np.log(good_pitch / bad_pitch)
+    assert rmse_gap > 1.0
 
 
 # --- Failure modes (worker_plan.md §7) ------------------------------------

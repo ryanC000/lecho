@@ -191,8 +191,12 @@ def test_nonuniform_rhythm_penalized(tmp_path):
     _, _, uniform_timing, _ = dsp.score(uni_aligned)
 
     # A real internal-rhythm error must score clearly worse than a pure tempo
-    # difference; 10 points is a wide margin the design should easily clear.
-    assert nonuniform_timing < uniform_timing - 10
+    # difference. Score points shrink as SCORE_K_TIMING grows (calibration
+    # keeps moving it), so pin the gap in distance units: invert
+    # score = 100*exp(-rmse/K) and require the rhythm error to add >= 0.1 to
+    # the log2-slope RMSE.
+    rmse_gap = dsp.SCORE_K_TIMING * np.log(uniform_timing / nonuniform_timing)
+    assert rmse_gap > 0.1
     assert "SYLLABLE_STRETCH" in _tags(aligned)
 
 

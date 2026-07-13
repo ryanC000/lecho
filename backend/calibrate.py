@@ -301,6 +301,7 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--tune", action="store_true", help="grid-search the scoring constants")
     parser.add_argument("--smoke", action="store_true", help="run on synthetic WAVs (no manifest needed)")
+    parser.add_argument("--only", type=int, default=None, help="restrict to one practice_id")
     args = parser.parse_args()
 
     if args.smoke:
@@ -309,7 +310,12 @@ def main() -> int:
             return 0  # smoke succeeds by running; gates only bind on the real corpus
     if not args.manifest.exists():
         parser.error(f"manifest not found: {args.manifest} (record the corpus per ticket 03, or use --smoke)")
-    return _run(load_manifest(args.manifest), args.tune)
+    entries = load_manifest(args.manifest)
+    if args.only is not None:
+        entries = [e for e in entries if e["practice_id"] == args.only]
+        if not entries:
+            parser.error(f"practice {args.only} not in manifest")
+    return _run(entries, args.tune)
 
 
 def _run(entries: list, do_tune: bool) -> int:

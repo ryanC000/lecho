@@ -28,11 +28,11 @@ PITCH_FLOOR_HZ = 75.0       # speech F0 range (worker_plan.md §9 open question,
 PITCH_CEILING_HZ = 500.0
 RMS_WINDOW_S = 0.025        # ~25ms RMS window, centered on each F0 frame time
 
-PITCH_WEIGHT = 0.55
-TIMING_WEIGHT = 0.25
+PITCH_WEIGHT = 0.60
+TIMING_WEIGHT = 0.20
 ENERGY_WEIGHT = 0.20
 
-DTW_ENERGY_LAMBDA = 0.5     # weight of |Δrms_z| in the joint DTW frame cost (PRD 8.6.3)
+DTW_ENERGY_LAMBDA = 1.0     # weight of |Δrms_z| in the joint DTW frame cost (PRD 8.6.3)
 # Path regularization (dsp-2). Without it the timing score is unusable:
 # on gently-varying contours many paths cost within pitch-tracker noise
 # (~0.02 st) of each other, so the "optimal" path zig-zags randomly and the
@@ -55,11 +55,12 @@ MAX_LENGTH_RATIO = 3.0      # PRD §6 abort: longer/shorter trimmed duration
 SAKOE_CHIBA_BAND_FRAC = 0.15  # DTW band width as a fraction of the longer sequence
 SILENCE_RMS_FRAC = 0.1      # frames below this fraction of peak RMS are "silence"
 
-# Placeholder until the good/bad calibration harness (§5) fixes real values.
+# Provisional values from the 2026-07-13 p2-only calibration run
+# (calibrate.py --tune --only 2; Decision log). Superseded by dsp-3 graduation.
 # Larger K => score falls off more slowly with distance.
-SCORE_K_PITCH_SEMITONES = 4.0
-SCORE_K_ENERGY_Z = 1.5
-SCORE_K_TIMING = 0.4        # timing: rmse of log2(tempo-normalized path slope)
+SCORE_K_PITCH_SEMITONES = 12.0
+SCORE_K_ENERGY_Z = 3.0
+SCORE_K_TIMING = 2.4        # timing: rmse of log2(tempo-normalized path slope)
 
 SLOPE_WINDOW_S = 0.15       # window over which the local warping-path slope is measured
 SLOPE_STRETCH_RATIO = 1.5   # |log2(slope)| beyond log2(this) tags SYLLABLE_STRETCH
