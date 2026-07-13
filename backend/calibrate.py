@@ -239,6 +239,50 @@ def _beats(a: dict, b: dict) -> bool:
     return key_a > key_b
 
 
+def probe_mfcc(entries: list, feats: dict) -> None:
+    """Diagnostic only (ADR 0003): would a segmental (MFCC) axis discriminate
+    take quality? Per-take MFCC RMSE vs the reference, projected through the
+    same DTW path the scorer uses. Go/no-go criterion: integrate an MFCC axis
+    only if min over practices of (bad_take_rmse - emulation_rmse) >= 0.15.
+    2026-07-13 verdict: NO-GO — the cross-speaker spectral floor dwarfs the
+    take-level spread; all takes articulate the same words.
+    """
+    import numpy as np
+
+    def mfcc_z(path, feat):
+        """12 CMVN'd MFCCs (c0 dropped) on the take's trimmed frame grid."""
+        snd = dsp.load_mono_16k(path)
+        mfcc = snd.to_mfcc(number_of_coefficients=12, window_length=0.025, time_step=dsp.FRAME_HOP_S)
+        arr = mfcc.to_array()[1:]  # row 0 is c0 (loudness), not spectral shape
+        grid = mfcc.xs()
+        rows = np.vstack([np.interp(feat.times, grid, row) for row in arr])
+        mean = rows.mean(axis=1, keepdims=True)
+        std = np.maximum(rows.std(axis=1, keepdims=True), 1e-12)
+        return (rows - mean) / std
+
+    print("\nMFCC probe (diagnostic - segmental axis go/no-go, ADR 0003):")
+    print(f"{'practice':>8}  {'take':<12} {'mfcc_rmse':>9} {'gap_vs_emu':>10}")
+    for entry in entries:
+        pid = entry["practice_id"]
+        ref_feat = feats[(pid, "reference")]
+        ref_mfcc = mfcc_z(entry["takes"]["reference"], ref_feat)
+        rmses = {}
+        for kind in SCORED_TAKES + DIAGNOSTIC_TAKES:
+            if kind not in entry["takes"]:
+                continue
+            take_feat = feats[(pid, kind)]
+            aligned = dsp.align(ref_feat, take_feat)
+            take_mfcc = mfcc_z(entry["takes"][kind], take_feat)
+            on_native = np.vstack(
+                [dsp._apply_path_mean(aligned.path, len(ref_feat), row) for row in take_mfcc]
+            )
+            rmses[kind] = float(np.sqrt(np.mean((ref_mfcc - on_native) ** 2)))
+        for kind, rmse in rmses.items():
+            gap = rmse - rmses["emulation"]
+            print(f"{pid:>8}  {kind:<12} {rmse:>9.3f} {gap:>+10.3f}")
+    print("  (integrate MFCC only if every bad-take gap_vs_emu >= 0.15)")
+
+
 def pitch_floor_sweep(entries: list) -> None:
     """Diagnostic only (Phase 1R): re-extract at each candidate floor and
     re-score with the current constants, plus median voiced F0 per take so
@@ -302,11 +346,12 @@ def main() -> int:
     parser.add_argument("--tune", action="store_true", help="grid-search the scoring constants")
     parser.add_argument("--smoke", action="store_true", help="run on synthetic WAVs (no manifest needed)")
     parser.add_argument("--only", type=int, default=None, help="restrict to one practice_id")
+    parser.add_argument("--probe-mfcc", action="store_true", help="diagnostic: would a segmental (MFCC) axis discriminate?")
     args = parser.parse_args()
 
     if args.smoke:
         with tempfile.TemporaryDirectory() as tmp:
-            _run(build_smoke_corpus(tmp), args.tune)
+            _run(build_smoke_corpus(tmp), args.tune, args.probe_mfcc)
             return 0  # smoke succeeds by running; gates only bind on the real corpus
     if not args.manifest.exists():
         parser.error(f"manifest not found: {args.manifest} (record the corpus per ticket 03, or use --smoke)")
@@ -315,10 +360,10 @@ def main() -> int:
         entries = [e for e in entries if e["practice_id"] == args.only]
         if not entries:
             parser.error(f"practice {args.only} not in manifest")
-    return _run(entries, args.tune)
+    return _run(entries, args.tune, args.probe_mfcc)
 
 
-def _run(entries: list, do_tune: bool) -> int:
+def _run(entries: list, do_tune: bool, do_probe_mfcc: bool = False) -> int:
     feats = extract_corpus(entries)
     rows = corpus_rows(entries, feats)
     print("Scores with current dsp.py constants:")
@@ -341,6 +386,9 @@ def _run(entries: list, do_tune: bool) -> int:
             print_table(tuned_rows)
             all_pass = print_gates(tuned_rows)
         pitch_floor_sweep(entries)
+
+    if do_probe_mfcc:
+        probe_mfcc(entries, feats)
 
     return 0 if all_pass else 1
 
