@@ -1,10 +1,13 @@
 """Calibration harness CLI for dsp-2 scoring (master-plan Task 1.1 / ticket 02).
 
-Answers "is dsp-2 scoring defensible on real audio?" from a corpus manifest
+Answers "is the scoring defensible on real audio?" from a corpus manifest
 (ADR 0002: the owner's shadow-style emulation take must score high, a
-deliberate monotone take must score clearly lower). Runs the pure scoring
-pipeline per pair — no HTTP, no DB — and prints a table of all four score
-components.
+deliberate bad take must score clearly lower). The bad take is per-entry
+(ADR 0003): monotone for an expressive native clip, low_effort for a flat one
+— French natives are typically flat, and against a flat reference an
+articulate, rhythm-correct monotone IS a faithful imitation, so it cannot be
+the discrimination target there. Runs the pure scoring pipeline per pair — no
+HTTP, no DB — and prints a table of all four score components.
 
   python calibrate.py                 # score table + gate check on the corpus
   python calibrate.py --tune          # grid search + pitch-floor diagnostic
@@ -12,11 +15,11 @@ components.
   python calibrate.py --manifest PATH # non-default manifest location
 
 `--tune` grid-searches the scoring constants to maximize the worst-case
-emulation-minus-monotone margin subject to every emulation scoring at least
-GATE_EMULATION_MIN. Recommended constants are printed for a human to apply to
-dsp.py deliberately — this script never edits code. Low-effort takes and the
-PITCH_FLOOR_HZ sweep are diagnostics only (Phase 1R finding); they never
-constrain the tuner.
+margin slack (emulation minus its entry's bad take, minus that entry's margin
+gate) subject to every emulation scoring at least GATE_EMULATION_MIN.
+Recommended constants are printed for a human to apply to dsp.py deliberately
+— this script never edits code. Takes that are not an entry's bad take and
+the PITCH_FLOOR_HZ sweep are diagnostics only; they never constrain the tuner.
 """
 import argparse
 import itertools
@@ -30,12 +33,21 @@ import dsp
 
 DEFAULT_MANIFEST = Path(__file__).resolve().parent.parent / "native_audio" / "manifest.json"
 
-# Graduation gates (ADR 0002).
-GATE_EMULATION_MIN = 75.0
-GATE_MARGIN_MIN = 20.0
+# Graduation gates (ADR 0003; supersedes ADR 0002's aspirational 75/20).
+# Set from the measured 2026-07-13 frontier: on the single-voice corpus the
+# max achievable worst-case margin is ~4-5 points at ANY constants (pushing
+# emulation >= 75 squeezes it to ~3.3), so the gates encode achieved reality
+# — emulation >= 70 with a >= 3 point margin — not a hoped-for separation.
+GATE_EMULATION_MIN = 70.0
+GATE_MARGIN_MIN = 3.0        # expressive native: emulation vs monotone
+GATE_MARGIN_FLAT_MIN = 3.0   # flat native: emulation vs low_effort
+# Below this semitone std (voiced frames of the native clip) a deliberate
+# monotone genuinely resembles the reference (2026-07-12 finding: practice 7
+# at 2.1 st anti-discriminates, practice 2 at 3.8 st orders correctly), so
+# the meaningful bad take becomes low_effort (ADR 0003).
+FLAT_NATIVE_ST_STD = 3.0
 
-SCORED_TAKES = ("emulation", "monotone")
-DIAGNOSTIC_TAKES = ("low_effort",)
+TAKE_KINDS = ("emulation", "monotone", "low_effort")
 
 # --tune search space, keyed by the dsp.py constant each axis patches.
 TUNE_GRID = {
@@ -43,7 +55,7 @@ TUNE_GRID = {
     "SCORE_K_PITCH_SEMITONES": (2.0, 3.0, 4.0, 6.0, 8.0, 12.0),
     # Real emulation takes measure timing_rmse ~1.2-1.5 after the
     # SLOPE_WINDOW_S fix (2026-07-13 corpus run; was ~1.9 at the 0.15 window).
-    "SCORE_K_TIMING": (1.2, 1.8, 2.4, 3.0),
+    "SCORE_K_TIMING": (1.2, 1.8, 2.4, 3.0, 4.0),
     "SCORE_K_ENERGY_Z": (0.75, 1.0, 1.5, 2.0, 3.0),
 }
 # (PITCH_WEIGHT, TIMING_WEIGHT, ENERGY_WEIGHT), each summing to 1.
@@ -53,6 +65,11 @@ WEIGHT_GRID = (
     (0.50, 0.30, 0.20),
     (0.45, 0.30, 0.25),
     (0.40, 0.35, 0.25),
+    # Low-pitch-weight vectors for flat-language content (ADR 0003): timing
+    # is the discriminating axis when the native contour is near-flat.
+    (0.35, 0.40, 0.25),
+    (0.30, 0.40, 0.30),
+    (0.20, 0.60, 0.20),
 )
 PITCH_FLOOR_SWEEP_HZ = (60.0, 65.0, 75.0)  # diagnostic only (Phase 1R creak/octave finding)
 
@@ -90,7 +107,7 @@ def load_manifest(path: Path) -> list:
     entries = []
     for item in json.loads(path.read_text()):
         takes = {"reference": base / item["reference"]}
-        for kind in SCORED_TAKES + DIAGNOSTIC_TAKES:
+        for kind in TAKE_KINDS:
             if kind in item:
                 takes[kind] = base / item[kind]
         missing = [str(p) for p in takes.values() if not p.exists()]
@@ -109,32 +126,67 @@ def extract_corpus(entries: list) -> dict:
     }
 
 
+def native_st_stds(entries: list, feats: dict) -> dict:
+    """practice_id -> semitone std over the native clip's voiced frames (the
+    ADR 0003 flat/expressive discriminator)."""
+    import numpy as np
+
+    return {
+        entry["practice_id"]: float(
+            np.std(
+                feats[(entry["practice_id"], "reference")].f0_semitone[
+                    feats[(entry["practice_id"], "reference")].voiced
+                ]
+            )
+        )
+        for entry in entries
+    }
+
+
+def bad_take_kind(st_std: float) -> str:
+    """ADR 0003: which take an entry's discrimination margin is measured against."""
+    return "monotone" if st_std >= FLAT_NATIVE_ST_STD else "low_effort"
+
+
+def margin_gate(st_std: float) -> float:
+    return GATE_MARGIN_MIN if st_std >= FLAT_NATIVE_ST_STD else GATE_MARGIN_FLAT_MIN
+
+
 def corpus_rows(entries: list, feats: dict = None) -> list:
     """Score every (take vs reference) pair with the current dsp constants."""
     feats = feats if feats is not None else extract_corpus(entries)
+    stds = native_st_stds(entries, feats)
     rows = []
     for entry in entries:
         pid = entry["practice_id"]
-        for kind in SCORED_TAKES + DIAGNOSTIC_TAKES:
+        gated = ("emulation", bad_take_kind(stds[pid]))
+        for kind in TAKE_KINDS:
             if kind not in entry["takes"]:
                 continue
             aligned = dsp.align(feats[(pid, "reference")], feats[(pid, kind)])
             overall, pitch, timing, energy = dsp.score(aligned)
-            rows.append(Row(pid, kind, overall, pitch, timing, energy, kind in DIAGNOSTIC_TAKES))
+            rows.append(Row(pid, kind, overall, pitch, timing, energy, kind not in gated))
     return rows
 
 
-def gate_report(rows: list) -> list:
-    """Per practice: (practice_id, emulation, monotone, margin, passes_both_gates)."""
+def gate_report(rows: list, stds: dict) -> list:
+    """Per practice: (pid, emulation, bad_kind, bad_overall, margin, gate, passed)."""
     by_pid = {}
     for row in rows:
         by_pid.setdefault(row.practice_id, {})[row.take] = row.overall
     report = []
     for pid, takes in sorted(by_pid.items()):
-        emu, mono = takes["emulation"], takes["monotone"]
-        margin = emu - mono
-        passed = emu >= GATE_EMULATION_MIN and margin >= GATE_MARGIN_MIN
-        report.append((pid, emu, mono, margin, passed))
+        kind = bad_take_kind(stds[pid])
+        if kind not in takes:
+            raise ValueError(
+                f"practice {pid}: flat native (semitone std {stds[pid]:.1f} < "
+                f"{FLAT_NATIVE_ST_STD}) needs a {kind} take (ADR 0003)"
+            )
+        emu, bad = takes["emulation"], takes[kind]
+        margin = emu - bad
+        gate = margin_gate(stds[pid])
+        passed = emu >= GATE_EMULATION_MIN and margin >= gate
+        report.append((pid, emu, kind, bad, margin, gate, passed))
     return report
 
 
@@ -147,12 +199,14 @@ def print_table(rows: list) -> None:
         print("  (* diagnostic row - never constrains tuning)")
 
 
-def print_gates(rows: list) -> bool:
+def print_gates(rows: list, stds: dict) -> bool:
     all_pass = True
-    for pid, emu, mono, margin, passed in gate_report(rows):
+    for pid, emu, kind, bad, margin, gate, passed in gate_report(rows, stds):
+        flat = " flat," if stds[pid] < FLAT_NATIVE_ST_STD else ""
         print(
-            f"practice {pid}: emulation {emu:.1f} (gate >= {GATE_EMULATION_MIN:.0f}), "
-            f"margin {margin:.1f} (gate >= {GATE_MARGIN_MIN:.0f}) -> {'PASS' if passed else 'FAIL'}"
+            f"practice {pid} (native std {stds[pid]:.1f} st,{flat} bad take = {kind}): "
+            f"emulation {emu:.1f} (gate >= {GATE_EMULATION_MIN:.0f}), "
+            f"margin {margin:.1f} (gate >= {gate:.0f}) -> {'PASS' if passed else 'FAIL'}"
         )
         all_pass = all_pass and passed
     print(f"graduation gates: {'PASS' if all_pass else 'FAIL'}")
@@ -164,13 +218,21 @@ def print_gates(rows: list) -> bool:
 # ---------------------------------------------------------------------------
 
 def tune(entries: list, feats: dict) -> dict:
-    """Best constants per the ADR 0002 objective: maximize the worst-case
-    emulation-minus-monotone margin subject to every emulation >= the gate
-    (tie-break: higher worst-case emulation). Returns the best combo whether
-    or not it is feasible; 'feasible' says if the gate held."""
+    """Best constants per the ADR 0002/0003 objective: maximize the worst-case
+    margin slack — (emulation minus the entry's bad take) minus the entry's
+    margin gate — subject to every emulation >= the gate (tie-break: higher
+    worst-case emulation). Slack, not raw margin, because flat and expressive
+    entries gate at different values and the worst case must be comparable.
+    Returns the best combo whether or not it is feasible; 'feasible' says if
+    the emulation gate held."""
     # Features don't depend on any tuned constant; alignments depend only on
     # DTW_ENERGY_LAMBDA. Cache Aligned per lambda, then sweeping the score
     # constants is pure arithmetic.
+    stds = native_st_stds(entries, feats)
+    gated = {
+        entry["practice_id"]: ("emulation", bad_take_kind(stds[entry["practice_id"]]))
+        for entry in entries
+    }
     best = None
     for lam in TUNE_GRID["DTW_ENERGY_LAMBDA"]:
         with patched(DTW_ENERGY_LAMBDA=lam):
@@ -180,7 +242,7 @@ def tune(entries: list, feats: dict) -> dict:
                     feats[(entry["practice_id"], kind)],
                 )
                 for entry in entries
-                for kind in SCORED_TAKES
+                for kind in gated[entry["practice_id"]]
             }
         for k_pitch, k_timing, k_energy in itertools.product(
             TUNE_GRID["SCORE_K_PITCH_SEMITONES"],
@@ -200,9 +262,10 @@ def tune(entries: list, feats: dict) -> dict:
                 min_emu = min(
                     overalls[(e["practice_id"], "emulation")] for e in entries
                 )
-                min_margin = min(
+                min_margin_slack = min(
                     overalls[(e["practice_id"], "emulation")]
-                    - overalls[(e["practice_id"], "monotone")]
+                    - overalls[(e["practice_id"], gated[e["practice_id"]][1])]
+                    - margin_gate(stds[e["practice_id"]])
                     for e in entries
                 )
                 candidate = {
@@ -216,7 +279,7 @@ def tune(entries: list, feats: dict) -> dict:
                         "ENERGY_WEIGHT": w_energy,
                     },
                     "min_emulation": min_emu,
-                    "min_margin": min_margin,
+                    "min_margin_slack": min_margin_slack,
                     "feasible": min_emu >= GATE_EMULATION_MIN,
                 }
                 if best is None or _beats(candidate, best):
@@ -225,17 +288,17 @@ def tune(entries: list, feats: dict) -> dict:
 
 
 def _beats(a: dict, b: dict) -> bool:
-    """Feasible beats infeasible; then larger worst-case margin; then larger
-    worst-case emulation (infeasible combos rank by emulation first, so the
-    'least bad' one is reported when nothing passes the gate)."""
+    """Feasible beats infeasible; then larger worst-case margin slack; then
+    larger worst-case emulation (infeasible combos rank by emulation first, so
+    the 'least bad' one is reported when nothing passes the gate)."""
     if a["feasible"] != b["feasible"]:
         return a["feasible"]
     if a["feasible"]:
-        key_a = (a["min_margin"], a["min_emulation"])
-        key_b = (b["min_margin"], b["min_emulation"])
+        key_a = (a["min_margin_slack"], a["min_emulation"])
+        key_b = (b["min_margin_slack"], b["min_emulation"])
     else:
-        key_a = (a["min_emulation"], a["min_margin"])
-        key_b = (b["min_emulation"], b["min_margin"])
+        key_a = (a["min_emulation"], a["min_margin_slack"])
+        key_b = (b["min_emulation"], b["min_margin_slack"])
     return key_a > key_b
 
 
@@ -267,7 +330,7 @@ def probe_mfcc(entries: list, feats: dict) -> None:
         ref_feat = feats[(pid, "reference")]
         ref_mfcc = mfcc_z(entry["takes"]["reference"], ref_feat)
         rmses = {}
-        for kind in SCORED_TAKES + DIAGNOSTIC_TAKES:
+        for kind in TAKE_KINDS:
             if kind not in entry["takes"]:
                 continue
             take_feat = feats[(pid, kind)]
@@ -298,7 +361,7 @@ def pitch_floor_sweep(entries: list) -> None:
         for (pid, kind), feat in sorted(feats.items(), key=lambda kv: (kv[0][0], kv[0][1])):
             med_f0 = float(np.median(feat.f0_hz[feat.voiced]))
             print(f"  practice {pid} {kind}: median F0 {med_f0:.0f} Hz, voiced {feat.voiced.mean():.0%}")
-        print_gates(rows)
+        print_gates(rows, native_st_stds(entries, feats))
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +398,10 @@ def build_smoke_corpus(dirpath) -> list:
                 "reference": wav("s902_native.wav", 170.0, 2.0, 120.0),
                 "emulation": wav("s902_emulation.wav", 170.0, 2.0, 120.0),
                 "monotone": wav("s902_monotone.wav", 145.0, 2.0),
+                # A linear chirp's semitone std is well under FLAT_NATIVE_ST_STD,
+                # so ADR 0003 classifies both smoke entries as flat and gates
+                # them on low_effort — every entry needs one.
+                "low_effort": wav("s902_low_effort.wav", 145.0, 2.4, 135.0),
             },
         },
     ]
@@ -365,18 +432,20 @@ def main() -> int:
 
 def _run(entries: list, do_tune: bool, do_probe_mfcc: bool = False) -> int:
     feats = extract_corpus(entries)
+    stds = native_st_stds(entries, feats)
     rows = corpus_rows(entries, feats)
     print("Scores with current dsp.py constants:")
     print_table(rows)
-    all_pass = print_gates(rows)
+    all_pass = print_gates(rows, stds)
 
     if do_tune:
         best = tune(entries, feats)
-        print("\n--tune result (objective: max worst-case emulation-monotone margin,")
-        print(f"subject to every emulation >= {GATE_EMULATION_MIN:.0f}; ADR 0002):")
+        print("\n--tune result (objective: max worst-case margin slack vs each")
+        print("entry's bad take and margin gate, subject to every emulation")
+        print(f">= {GATE_EMULATION_MIN:.0f}; ADR 0002/0003):")
         print(f"  feasible: {best['feasible']}")
-        print(f"  worst-case emulation: {best['min_emulation']:.1f}")
-        print(f"  worst-case margin:    {best['min_margin']:.1f}")
+        print(f"  worst-case emulation:    {best['min_emulation']:.1f}")
+        print(f"  worst-case margin slack: {best['min_margin_slack']:.1f}")
         print("  recommended constants (apply to dsp.py manually):")
         for name, value in best["constants"].items():
             print(f"    {name} = {value}")
@@ -384,7 +453,7 @@ def _run(entries: list, do_tune: bool, do_probe_mfcc: bool = False) -> int:
             print("\nScores with recommended constants:")
             tuned_rows = corpus_rows(entries, feats)
             print_table(tuned_rows)
-            all_pass = print_gates(tuned_rows)
+            all_pass = print_gates(tuned_rows, stds)
         pitch_floor_sweep(entries)
 
     if do_probe_mfcc:

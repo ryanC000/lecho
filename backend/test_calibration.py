@@ -12,18 +12,21 @@ import calibrate
 
 def test_smoke_corpus_runs_end_to_end(tmp_path):
     entries = calibrate.build_smoke_corpus(tmp_path)
-    rows = calibrate.corpus_rows(entries)
+    feats = calibrate.extract_corpus(entries)
+    stds = calibrate.native_st_stds(entries, feats)
+    rows = calibrate.corpus_rows(entries, feats)
 
-    # 2 entries: emulation + monotone each, low_effort only on the first.
-    assert len(rows) == 5
+    # 2 entries: reference + emulation + monotone + low_effort scored takes.
+    assert len(rows) == 6
     for row in rows:
         for component in (row.overall, row.pitch, row.timing, row.energy):
             assert 0.0 <= component <= 100.0
 
-    # The synthetic emulation reproduces the native contour; the flat monotone
+    # The synthetic emulation reproduces the native contour; the entry's bad
+    # take (ADR 0003: low_effort here — chirp references classify as flat)
     # must land below it on every entry.
-    for _pid, emulation, monotone, _margin, _passed in calibrate.gate_report(rows):
-        assert emulation > monotone
+    for _pid, emulation, _kind, bad, _margin, _gate, _passed in calibrate.gate_report(rows, stds):
+        assert emulation > bad
 
 
 corpus_missing = pytest.mark.skipif(
@@ -35,26 +38,34 @@ corpus_missing = pytest.mark.skipif(
 @corpus_missing
 def test_corpus_scores_end_to_end():
     entries = calibrate.load_manifest(calibrate.DEFAULT_MANIFEST)
-    rows = calibrate.corpus_rows(entries)
+    feats = calibrate.extract_corpus(entries)
+    stds = calibrate.native_st_stds(entries, feats)
+    rows = calibrate.corpus_rows(entries, feats)
 
-    assert len(calibrate.gate_report(rows)) >= 2  # corpus size per Decision log 2026-07-12
+    assert len(calibrate.gate_report(rows, stds)) >= 2  # corpus size per Decision log 2026-07-12
     for row in rows:
         for component in (row.overall, row.pitch, row.timing, row.energy):
             assert 0.0 <= component <= 100.0
 
 
-@corpus_missing
-@pytest.mark.xfail(
-    reason="constants are placeholders and practice 7's near-flat native clip "
-    "cannot discriminate emulation from monotone (2026-07-12 calibration run; "
-    "corpus entry to be replaced) — remove this marker when ticket 04 graduates "
-    "the constants",
-    strict=False,
-)
-def test_corpus_passes_graduation_gates():
-    entries = calibrate.load_manifest(calibrate.DEFAULT_MANIFEST)
-    rows = calibrate.corpus_rows(entries)
+def test_bad_take_selection():
+    """ADR 0003: expressive natives gate on monotone at the ADR 0002 margin;
+    flat natives gate on low_effort at the flat margin."""
+    assert calibrate.bad_take_kind(3.8) == "monotone"
+    assert calibrate.margin_gate(3.8) == calibrate.GATE_MARGIN_MIN
+    assert calibrate.bad_take_kind(2.1) == "low_effort"
+    assert calibrate.margin_gate(2.1) == calibrate.GATE_MARGIN_FLAT_MIN
 
-    for _pid, emulation, _monotone, margin, _passed in calibrate.gate_report(rows):
-        assert emulation >= calibrate.GATE_EMULATION_MIN
-        assert margin >= calibrate.GATE_MARGIN_MIN
+
+@corpus_missing
+def test_corpus_passes_graduation_gates():
+    """Definition of done for the dsp-3 graduation (ADR 0003): every corpus
+    entry passes its emulation gate and its per-entry margin gate with the
+    constants as shipped in dsp.py."""
+    entries = calibrate.load_manifest(calibrate.DEFAULT_MANIFEST)
+    feats = calibrate.extract_corpus(entries)
+    stds = calibrate.native_st_stds(entries, feats)
+    rows = calibrate.corpus_rows(entries, feats)
+
+    for _pid, _emulation, _kind, _bad, _margin, _gate, passed in calibrate.gate_report(rows, stds):
+        assert passed

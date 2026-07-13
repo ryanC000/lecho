@@ -17,7 +17,7 @@ import dsp
 import models
 import storage
 
-ALGO_VERSION = "dsp-2.1"
+ALGO_VERSION = "dsp-3"
 
 # User-facing failure for a detected bleed (master-plan Task 3.2). Retryable —
 # the fix is on the user's side, so re-recording can help.

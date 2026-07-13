@@ -28,8 +28,12 @@ PITCH_FLOOR_HZ = 75.0       # speech F0 range (worker_plan.md §9 open question,
 PITCH_CEILING_HZ = 500.0
 RMS_WINDOW_S = 0.025        # ~25ms RMS window, centered on each F0 frame time
 
-PITCH_WEIGHT = 0.60
-TIMING_WEIGHT = 0.20
+# Graduated 2026-07-13 (ADR 0003, calibrate.py --tune on the full corpus):
+# timing-led because the content is flat-pitch French — rhythm, not melody,
+# carries the discrimination signal there (pitch RMSE actively rewards
+# flatness against a flat reference, so it cannot lead).
+PITCH_WEIGHT = 0.20
+TIMING_WEIGHT = 0.60
 ENERGY_WEIGHT = 0.20
 
 DTW_ENERGY_LAMBDA = 1.0     # weight of |Δrms_z| in the joint DTW frame cost (PRD 8.6.3)
@@ -55,12 +59,12 @@ MAX_LENGTH_RATIO = 3.0      # PRD §6 abort: longer/shorter trimmed duration
 SAKOE_CHIBA_BAND_FRAC = 0.15  # DTW band width as a fraction of the longer sequence
 SILENCE_RMS_FRAC = 0.1      # frames below this fraction of peak RMS are "silence"
 
-# Provisional values from the 2026-07-13 p2-only calibration run
-# (calibrate.py --tune --only 2; Decision log). Superseded by dsp-3 graduation.
+# Graduated 2026-07-13 (ADR 0003 gates: every emulation >= 70, every margin
+# vs the entry's bad take >= 3 — measured achievable values, see the ADR).
 # Larger K => score falls off more slowly with distance.
-SCORE_K_PITCH_SEMITONES = 12.0
+SCORE_K_PITCH_SEMITONES = 8.0
 SCORE_K_ENERGY_Z = 3.0
-SCORE_K_TIMING = 2.4        # timing: rmse of log2(tempo-normalized path slope)
+SCORE_K_TIMING = 4.0        # timing: rmse of log2(tempo-normalized path slope)
 
 # Window over which the local warping-path slope is measured for SCORING.
 # Must exceed the typical vertical/horizontal run length of a real-speech DTW
