@@ -41,9 +41,9 @@ DIAGNOSTIC_TAKES = ("low_effort",)
 TUNE_GRID = {
     "DTW_ENERGY_LAMBDA": (0.25, 0.5, 1.0),
     "SCORE_K_PITCH_SEMITONES": (2.0, 3.0, 4.0, 6.0, 8.0, 12.0),
-    # Real takes measure timing_rmse ~1.9 (2026-07-12 corpus run); an axis
-    # capped at 0.6 pins every timing score near zero, so it reaches past 2.
-    "SCORE_K_TIMING": (0.3, 0.6, 1.2, 2.4),
+    # Real emulation takes measure timing_rmse ~1.2-1.5 after the
+    # SLOPE_WINDOW_S fix (2026-07-13 corpus run; was ~1.9 at the 0.15 window).
+    "SCORE_K_TIMING": (1.2, 1.8, 2.4, 3.0),
     "SCORE_K_ENERGY_Z": (0.75, 1.0, 1.5, 2.0, 3.0),
 }
 # (PITCH_WEIGHT, TIMING_WEIGHT, ENERGY_WEIGHT), each summing to 1.

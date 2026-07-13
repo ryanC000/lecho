@@ -62,7 +62,16 @@ SCORE_K_PITCH_SEMITONES = 12.0
 SCORE_K_ENERGY_Z = 3.0
 SCORE_K_TIMING = 2.4        # timing: rmse of log2(tempo-normalized path slope)
 
-SLOPE_WINDOW_S = 0.15       # window over which the local warping-path slope is measured
+# Window over which the local warping-path slope is measured for SCORING.
+# Must exceed the typical vertical/horizontal run length of a real-speech DTW
+# path: at 0.15 runs longer than the window drove the slope to the 0.05 clamp
+# on 8-10% of frames, inflating timing RMSE to ~1.9 on every take regardless
+# of quality (2026-07-13 corpus diagnostic). Segment TAGGING keeps its own
+# shorter window below: a 0.30 window dilutes a genuine 0.25s syllable
+# stretch below the SLOPE_STRETCH_RATIO threshold (test_dsp2 test 4), and a
+# tag must localize the error while the score only aggregates it.
+SLOPE_WINDOW_S = 0.30
+SLOPE_TAG_WINDOW_S = 0.15   # segment-tagging slope window (SYLLABLE_STRETCH)
 SLOPE_STRETCH_RATIO = 1.5   # |log2(slope)| beyond log2(this) tags SYLLABLE_STRETCH
 PAUSE_MIN_S = 0.15          # minimum silent run to count as a pause (PRD 8.6.3)
 
@@ -124,7 +133,8 @@ class Aligned:
     native: ProsodyFeatures
     user: ProsodyFeatures
     path: list  # list[(native_idx, user_idx)], monotonic
-    local_slope: np.ndarray  # per native frame; 1.0 = on the native's rhythm
+    local_slope: np.ndarray  # per native frame; 1.0 = on the native's rhythm (SLOPE_WINDOW_S, scoring)
+    tag_slope: np.ndarray  # same signal at SLOPE_TAG_WINDOW_S, for segment tagging
     user_f0_hz: np.ndarray
     user_voiced: np.ndarray
     user_f0_semitone: np.ndarray
@@ -377,7 +387,8 @@ def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
     native_rms_n = native.rms / max(np.max(native.rms), 1e-12)
     user_rms_n = user.rms / max(np.max(user.rms), 1e-12)
     path = _dtw_path(native.f0_semitone, native_rms_n, user.f0_semitone, user_rms_n)
-    local_slope = _path_local_slope(path, len_n, len_u)
+    local_slope = _path_local_slope(path, len_n, len_u, SLOPE_WINDOW_S)
+    tag_slope = _path_local_slope(path, len_n, len_u, SLOPE_TAG_WINDOW_S)
 
     user_f0_hz = _apply_path_mean(path, len_n, user.f0_hz)
     user_f0_semitone = _apply_path_mean(path, len_n, user.f0_semitone)
@@ -390,6 +401,7 @@ def align(native: ProsodyFeatures, user: ProsodyFeatures) -> Aligned:
         user=user,
         path=path,
         local_slope=local_slope,
+        tag_slope=tag_slope,
         user_f0_hz=user_f0_hz,
         user_voiced=user_voiced,
         user_f0_semitone=user_f0_semitone,
@@ -480,7 +492,7 @@ def _apply_path_any(path: list, len_n: int, source: np.ndarray) -> np.ndarray:
     return result
 
 
-def _path_local_slope(path: list, len_n: int, len_u: int) -> np.ndarray:
+def _path_local_slope(path: list, len_n: int, len_u: int, window_s: float) -> np.ndarray:
     """Tempo-normalized local slope of the warping path, per native frame.
 
     j_mean[i] is the mean user index the path matched to native frame i; its
@@ -499,7 +511,7 @@ def _path_local_slope(path: list, len_n: int, len_u: int) -> np.ndarray:
     only costs at the edges.
     """
     j_mean = _apply_path_mean(path, len_n, np.arange(len_u, dtype=np.float64))
-    half_w = max(1, int(round((SLOPE_WINDOW_S / FRAME_HOP_S) / 2)))
+    half_w = max(1, int(round((window_s / FRAME_HOP_S) / 2)))
     raw = np.empty(len_n, dtype=np.float64)
     for i in range(len_n):
         lo = max(0, i - half_w)
@@ -594,8 +606,9 @@ def make_segments(aligned: Aligned) -> list:
         )
 
     # SYLLABLE_STRETCH (dsp-2): runs where the tempo-normalized path slope
-    # deviates beyond SLOPE_STRETCH_RATIO in either direction.
-    log_slope = np.log2(aligned.local_slope)
+    # deviates beyond SLOPE_STRETCH_RATIO in either direction. Uses the
+    # shorter tag window so a sub-window stretch isn't diluted below threshold.
+    log_slope = np.log2(aligned.tag_slope)
     stretch_mask = np.abs(log_slope) > np.log2(SLOPE_STRETCH_RATIO)
     for run_start, run_end in _find_runs(stretch_mask):
         stretched = log_slope[run_start:run_end].mean() > 0

@@ -294,3 +294,31 @@ def test_independent_take_not_flagged_as_bleed():
 
     peak = dsp.detect_bleed(native, voice, sr)
     assert peak < dsp.NCC_BLEED_THRESHOLD
+
+
+# --- 8. Slope window vs. path-run length (SLOPE_WINDOW_S regression) --------
+
+def test_slope_window_spans_path_runs():
+    """A hand-built path with a 20-frame horizontal run (native advances while
+    the user index holds - the user locally rushed). A slope window SHORTER
+    than the run reads a zero slope at the run's center and clamps to 0.05
+    (log2 = -4.3), poisoning the timing RMSE with artifact frames - the
+    2026-07-13 corpus diagnostic measured 8-10% of frames clamped this way on
+    every real take at the old 0.15s window. The shipped window must span
+    real-speech run lengths so the same path stays off the clamp floor and its
+    log2-RMSE stays bounded.
+    """
+    len_n, len_u = 100, 80
+    path = [(i, i) for i in range(40)]                     # diagonal
+    path += [(i, 39) for i in range(40, 60)]               # 20-frame run, j held
+    path += [(i, i - 20) for i in range(60, 100)]          # diagonal again
+
+    with_short = dsp._path_local_slope(path, len_n, len_u, 0.15)
+    assert np.min(with_short) <= 0.05  # short window: run center hits the clamp
+
+    with_shipped = dsp._path_local_slope(path, len_n, len_u, dsp.SLOPE_WINDOW_S)
+    assert np.min(with_shipped) > 0.05  # shipped window spans the run: no clamp
+
+    rmse_short = float(np.sqrt(np.mean(np.log2(with_short) ** 2)))
+    rmse_shipped = float(np.sqrt(np.mean(np.log2(with_shipped) ** 2)))
+    assert rmse_shipped < rmse_short
