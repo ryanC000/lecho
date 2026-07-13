@@ -146,7 +146,7 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
 
     // Real mic silence sits *near* 128 (with a little noise), not exactly at it.
     // Treat the signal as silent if every sample stays within a small threshold.
-    const SILENCE_THRESHOLD = 2; // out of 128
+    const SILENCE_THRESHOLD = 1; // out of 128
     const isSilent = dataArray.every((val) => Math.abs(val - 128) <= SILENCE_THRESHOLD);
     if (isSilent && elapsedSeconds > 2) {
       setError("We aren't detecting any audio. It seems like your mic is not working.");
