@@ -4,8 +4,8 @@
 
 **Blocked by:** 06 (alignment endpoint). Demoable with solo playback alone; shadow-clock sync activates when 09 lands.
 
-**Status:** ready-for-agent
+**Status:** done (`1f2e2ed`)
 
-- [ ] Words highlight in sync during playback on an aligned practice, by ear
-- [ ] Unaligned practice: no highlighting, no console errors
-- [ ] Token↔word matching survives punctuation and apostrophes in the transcript
+- [x] Words highlight in sync during playback on an aligned practice, by ear
+- [x] Unaligned practice: no highlighting, no console errors
+- [x] Token↔word matching survives punctuation and apostrophes in the transcript
