@@ -113,6 +113,12 @@ def analysis_key(job_id: str) -> str:
     return f"analysis/{job_id}.json"
 
 
+def alignment_key(practice_id: int) -> str:
+    """Canonical key for a practice's word-alignment JSON (produced offline by
+    align_natives.py, served by GET /practices/{id}/alignment — PRD 8.4)."""
+    return f"alignments/{practice_id}.json"
+
+
 def delete(key: str) -> None:
     path = STORAGE_ROOT / key
     if path.exists():
