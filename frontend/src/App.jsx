@@ -115,7 +115,12 @@ const router = createBrowserRouter([
       {
         path: "practice/:id",
         element: <Practice />,
-        loader: async ({ params }) => apiGet(`/practices/${params.id}`)
+        loader: async ({ params }) => {
+          const practice = await apiGet(`/practices/${params.id}`);
+          // Alignment is optional: unaligned practices 404 → karaoke off.
+          const alignment = await apiGet(`/practices/${params.id}/alignment`).catch(() => null);
+          return { practice, alignment };
+        }
       },
       {
         // No loader: the job is genuinely async, so Results fetches GET /jobs/:jobId

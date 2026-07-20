@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useLoaderData } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
+import TranscriptKaraoke from '../components/TranscriptKaraoke';
 import { apiFetch, isLoggedIn, API_BASE } from '../utils/auth';
 
 const levelColors = {
@@ -19,9 +20,10 @@ const MODE_KEY = 'lecho_practice_mode';
 export default function Practice() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const practice = useLoaderData();
+  const { practice, alignment } = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
   const [uploadError, setUploadError] = useState(null);
+  const [nativeWave, setNativeWave] = useState(null);
   const [mode, setMode] = useState(() =>
     sessionStorage.getItem(MODE_KEY) === 'solo' ? 'solo' : 'shadow'
   );
@@ -133,11 +135,19 @@ export default function Practice() {
       <section className="flat-section">
         <h3>Native Reference ♪</h3>
         {nativeAudioUrl ? (
-          <AudioVisualizer
-            audioUrl={nativeAudioUrl}
-            color="var(--color-accent-violet)"
-            showSpeedControl={true}
-          />
+          <>
+            <AudioVisualizer
+              audioUrl={nativeAudioUrl}
+              color="var(--color-accent-violet)"
+              showSpeedControl={true}
+              onReady={setNativeWave}
+            />
+            <TranscriptKaraoke
+              transcript={practice.transcript}
+              words={alignment?.words}
+              wavesurfer={nativeWave}
+            />
+          </>
         ) : (
           <p className="hand-text text-lg" style={{ color: 'var(--color-ink-light)' }}>
             This practice isn't ready yet — reference audio coming soon.

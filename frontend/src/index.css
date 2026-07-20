@@ -961,6 +961,22 @@
     }
   }
 
+  /* ── Karaoke follow-along transcript (under the native player) ── */
+  .karaoke-transcript {
+    font-family: var(--font-serif);
+    @apply text-lg leading-9 text-center mt-3;
+    color: var(--color-ink-light);
+  }
+
+  .karaoke-word {
+    @apply rounded-md px-1 transition-colors duration-150;
+  }
+
+  .karaoke-word.active {
+    background-color: rgba(120, 108, 218, 0.15);
+    color: var(--color-accent-violet);
+  }
+
   .translation-actions {
     @apply flex justify-center;
   }
