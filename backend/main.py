@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
@@ -222,3 +223,26 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "segments": job.segments,
         "retryable": retryable,
     }
+
+
+@app.get("/jobs/{job_id}/coordinates")
+def get_job_coordinates(job_id: str, db: Session = Depends(database.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Serve a SUCCESS job's coordinate archive verbatim for the pitch visualizer.
+
+    Owner-scoped exactly like get_job_status (404 for another user's job). The
+    archive is the fixed worker contract (times, native/user F0 + semitone + RMS,
+    voiced masks) and is returned as-is — no recomputation, no key reshaping.
+    """
+    job = db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id, models.ProsodyJob.user_id == current_user.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "SUCCESS":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Coordinates are only available for a completed job.")
+
+    # Located by the worker's deterministic key, not via AnalysisSegment: a
+    # SUCCESS job with no flagged segments writes no segment rows but still has
+    # its archive on disk.
+    key = storage.analysis_key(job_id)
+    if not storage.exists(key):
+        raise HTTPException(status_code=404, detail="Coordinate archive not found for this job.")
+    return Response(content=storage.read_text(key), media_type="application/json")

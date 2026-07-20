@@ -99,6 +99,14 @@ def save_text(text: str, key: str) -> str:
     return key
 
 
+def read_text(key: str) -> str:
+    """Read a text blob (e.g. the analysis archive JSON) stored at `key`.
+
+    Symmetric with save_text, behind the same seam. (S3: streaming GET → decode.)
+    """
+    return (STORAGE_ROOT / key).read_text(encoding="utf-8")
+
+
 def analysis_key(job_id: str) -> str:
     """Canonical key for a job's coordinate archive (served later by the
     visualizer's GET /jobs/{id}/coordinates endpoint — worker_plan.md §3)."""

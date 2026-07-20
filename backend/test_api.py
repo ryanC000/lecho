@@ -6,8 +6,8 @@ clip identical to the practice's native → the worker runs inline under
 TestClient → SUCCESS with near-100 score and per-axis sub-scores. Plus the
 ingestion gates and auth/ownership rejections.
 
-Assertions for shadow gates, /coordinates, and logout revocation activate with
-their tickets (master-plan 07/11/13) — add them here when those land.
+Assertions for logout revocation activate with their tickets (master-plan 13) —
+add them here when those land.
 """
 import wave
 from pathlib import Path
@@ -215,6 +215,58 @@ def test_shadow_bleed_rejected_with_headphones_message(client, tmp_path):
     assert body["status"] == "FAILED"
     assert body["retryable"] is True
     assert body["error_message"] == worker_core.BLEED_MESSAGE
+
+
+# --- Coordinates endpoint (master-plan ticket 11) ---------------------------
+
+# The fixed archive contract produced by the worker (dsp.build_archive).
+_ARCHIVE_KEYS = {
+    "times", "native_f0_hz", "user_f0_hz_aligned",
+    "native_semitone", "user_semitone_aligned",
+    "native_rms", "user_rms_aligned", "voiced_masks",
+}
+
+
+def test_coordinates_returns_archive_for_owner(client):
+    headers = _auth_headers(client)
+    job_id = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S).json()["id"]
+    assert client.get(f"/jobs/{job_id}", headers=headers).json()["status"] == "SUCCESS"
+
+    r = client.get(f"/jobs/{job_id}/coordinates", headers=headers)
+    assert r.status_code == 200, r.text
+    archive = r.json()
+    assert set(archive) == _ARCHIVE_KEYS
+    # Every top-level track is an equal-length array under the contract keys.
+    n = len(archive["times"])
+    for key in _ARCHIVE_KEYS - {"voiced_masks"}:
+        assert len(archive[key]) == n, key
+    for mask in archive["voiced_masks"].values():
+        assert len(mask) == n
+
+
+def test_coordinates_invisible_to_other_user(client):
+    headers = _auth_headers(client, "owner@example.com")
+    job_id = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S).json()["id"]
+    other = _auth_headers(client, "other@example.com")
+    assert client.get(f"/jobs/{job_id}/coordinates", headers=other).status_code == 404
+    assert client.get(f"/jobs/{job_id}/coordinates", headers=headers).status_code == 200
+
+
+def test_coordinates_conflict_when_not_success(client, tmp_path):
+    # A bled shadow take FAILs the worker's bleed gate, so it never produces an
+    # archive — /coordinates must 409, not 404.
+    headers = _auth_headers(client)
+    with wave.open(str(client.native_wav)) as r:
+        params = r.getparams()
+        native_frames = r.readframes(r.getnframes())
+    bled = tmp_path / "bled_take.wav"
+    with wave.open(str(bled), "wb") as w:
+        w.setparams(params)
+        w.writeframes(native_frames + b"\x00" * params.framerate * params.sampwidth)
+    job_id = _post_job(client, headers, bled.read_bytes(), NATIVE_DURATION_S + 1.0, mode="shadow").json()["id"]
+    assert client.get(f"/jobs/{job_id}", headers=headers).json()["status"] == "FAILED"
+
+    assert client.get(f"/jobs/{job_id}/coordinates", headers=headers).status_code == 409
 
 
 # --- Auth edges -------------------------------------------------------------
