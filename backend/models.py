@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -107,6 +107,9 @@ class AnalysisSegment(Base):
     timestamp_end = Column(Float, nullable=False)
     feedback_tag = Column(String)
     explanation = Column(String)
+    # Words overlapping this segment (PRD 8.4), JSON-encoded list of strings.
+    # Null when the practice has no alignment or no word overlaps the segment.
+    words = Column(Text, nullable=True)
     # Backend-agnostic storage key of the job's coordinate archive. The DB
     # column keeps its historical name (s3_coordinates_json_path) to avoid a
     # SQLite table rebuild — only the ORM attribute is renamed.

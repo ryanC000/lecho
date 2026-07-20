@@ -47,6 +47,7 @@ describe('Results polling', () => {
               timestamp_end: 2.0,
               feedback_tag: 'INTONATION_DROP',
               explanation: 'Your pitch fell where the native rises.',
+              words: ['tout', 'le'],
             },
           ],
         })
@@ -72,6 +73,8 @@ describe('Results polling', () => {
     expect(screen.getByText('bonjour')).toBeInTheDocument();
     expect(screen.getByText('monde')).toBeInTheDocument();
     expect(screen.getByText('INTONATION DROP')).toBeInTheDocument();
+    // Word-anchored feedback (PRD 8.4): the segment's words are the headline.
+    expect(screen.getByText('tout le')).toBeInTheDocument();
     expect(screen.getByText('Your pitch fell where the native rises.')).toBeInTheDocument();
     expect(screen.getByText('Pitch')).toBeInTheDocument(); // sub-score row
 

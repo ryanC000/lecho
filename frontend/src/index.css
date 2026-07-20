@@ -1080,6 +1080,21 @@
     background-color: rgba(199, 90, 58, 0.1);
   }
 
+  /* Word-anchored feedback (PRD 8.4): the words are the headline, the timestamp
+     is demoted to secondary text below the tag row. */
+  .feedback-words {
+    @apply text-base font-semibold mr-auto;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  .feedback-time-secondary {
+    @apply block text-xs mb-2;
+    color: var(--color-ink-light);
+    opacity: 0.7;
+    font-family: var(--font-sans);
+  }
+
   .feedback-explanation {
     @apply text-sm leading-relaxed;
     color: var(--color-ink);

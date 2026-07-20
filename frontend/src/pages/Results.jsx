@@ -173,13 +173,22 @@ export default function Results() {
                 style={{ animationDelay: `${0.3 + idx * 0.12}s` }}
               >
                 <div className="feedback-card-tag">
-                  <span className="feedback-time">
-                    {seg.timestamp_start}s – {seg.timestamp_end}s
-                  </span>
+                  {seg.words && seg.words.length > 0 ? (
+                    <span className="feedback-words">{seg.words.join(' ')}</span>
+                  ) : (
+                    <span className="feedback-time">
+                      {seg.timestamp_start}s – {seg.timestamp_end}s
+                    </span>
+                  )}
                   <span className="feedback-badge">
                     {(seg.feedback_tag || '').replace(/_/g, ' ')}
                   </span>
                 </div>
+                {seg.words && seg.words.length > 0 && (
+                  <span className="feedback-time-secondary">
+                    {seg.timestamp_start}s – {seg.timestamp_end}s
+                  </span>
+                )}
                 <p className="feedback-explanation">{seg.explanation}</p>
               </div>
             ))}

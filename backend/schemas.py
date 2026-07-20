@@ -56,6 +56,7 @@ class SegmentResponse(BaseModel):
     timestamp_end: float
     feedback_tag: Optional[str] = None
     explanation: Optional[str] = None
+    words: Optional[List[str]] = None  # word-anchored feedback (PRD 8.4); null when unaligned
 
     class Config:
         orm_mode = True

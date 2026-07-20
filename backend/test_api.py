@@ -9,6 +9,7 @@ ingestion gates and auth/ownership rejections.
 Assertions for logout revocation activate with their tickets (master-plan 13) —
 add them here when those land.
 """
+import json
 import wave
 from pathlib import Path
 
@@ -267,6 +268,70 @@ def test_coordinates_conflict_when_not_success(client, tmp_path):
     assert client.get(f"/jobs/{job_id}", headers=headers).json()["status"] == "FAILED"
 
     assert client.get(f"/jobs/{job_id}/coordinates", headers=headers).status_code == 409
+
+
+# --- Word alignment (master-plan tickets 05/06, PRD 8.4) --------------------
+
+_WORDS = [
+    {"word": "on", "start": 0.0, "end": 0.5},
+    {"word": "les", "start": 0.5, "end": 1.0},
+    {"word": "amis", "start": 1.0, "end": 1.5},
+]
+
+
+def test_overlapping_words_interval_rule():
+    # [0.4, 1.1) overlaps "on" (touches 0.5), "les", "amis".
+    assert worker_core.overlapping_words(_WORDS, 0.4, 1.1) == ["on", "les", "amis"]
+    # A word ending exactly at seg_start does not overlap (strict >).
+    assert worker_core.overlapping_words(_WORDS, 0.5, 0.9) == ["les"]
+    # No overlap / empty alignment.
+    assert worker_core.overlapping_words(_WORDS, 2.0, 3.0) == []
+    assert worker_core.overlapping_words([], 0.0, 1.0) == []
+
+
+def _write_alignment(client, words):
+    storage.save_text(
+        json.dumps({"practice_id": client.practice_id, "source": "manual",
+                    "model": "french_mfa", "words": words}),
+        storage.alignment_key(client.practice_id),
+    )
+
+
+def test_alignment_endpoint_404_then_serves_contract(client):
+    # 404 before any alignment exists (like the native-audio route)...
+    assert client.get(f"/practices/{client.practice_id}/alignment").status_code == 404
+    assert client.get("/practices/99999/alignment").status_code == 404
+    # ...200 with the verbatim contract once one is written.
+    words = [{"word": "bonjour", "start": 0.0, "end": 3.0}]
+    _write_alignment(client, words)
+    r = client.get(f"/practices/{client.practice_id}/alignment")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["practice_id"] == client.practice_id
+    assert body["words"] == words
+
+
+def test_unaligned_job_segments_have_null_words(client):
+    # No alignment for this practice → every segment renders as today (words null).
+    headers = _auth_headers(client)
+    job_id = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S).json()["id"]
+    body = client.get(f"/jobs/{job_id}", headers=headers).json()
+    assert body["status"] == "SUCCESS"
+    assert all(seg["words"] is None for seg in body["segments"])
+
+
+def test_aligned_job_attaches_overlapping_words(client, tmp_path):
+    # A single word spanning the whole clip must attach to every segment a
+    # mismatched shadow take produces.
+    _write_alignment(client, [{"word": "bonjour", "start": 0.0, "end": NATIVE_DURATION_S + 1.0}])
+    headers = _auth_headers(client)
+    take = tmp_path / "mismatch.wav"
+    _write_sine_wav(take, freq_hz=210.0, duration_s=NATIVE_DURATION_S + 1.0, freq_end_hz=250.0)
+    job_id = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S + 1.0, mode="shadow").json()["id"]
+    body = client.get(f"/jobs/{job_id}", headers=headers).json()
+    assert body["status"] == "SUCCESS", body["error_message"]
+    assert body["segments"], "expected the mismatched take to flag segments"
+    assert all(seg["words"] == ["bonjour"] for seg in body["segments"])
 
 
 # --- Auth edges -------------------------------------------------------------

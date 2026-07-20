@@ -33,6 +33,23 @@ def fail_job(db, job: models.ProsodyJob, message: str):
     db.commit()
 
 
+def load_alignment_words(practice_id):
+    """The practice's alignment words (list of {word, start, end}), or [] when no
+    alignment JSON exists (unaligned practice — the common case today)."""
+    if practice_id is None:
+        return []
+    key = storage.alignment_key(practice_id)
+    if not storage.exists(key):
+        return []
+    return json.loads(storage.read_text(key)).get("words", [])
+
+
+def overlapping_words(words, seg_start, seg_end):
+    """Words whose [start, end) interval overlaps [seg_start, seg_end), in order
+    (PRD 8.4 word-mapping rule: word.start < seg.end and word.end > seg.start)."""
+    return [w["word"] for w in words if w["start"] < seg_end and w["end"] > seg_start]
+
+
 def run(job_id: str, session_factory):
     db = session_factory()
     try:
@@ -95,8 +112,14 @@ def run(job_id: str, session_factory):
         # 4. Persist the coordinate archive behind the storage seam.
         archive_key = storage.save_text(json.dumps(archive), storage.analysis_key(job_id))
 
+        # 4b. Word-anchor the segments (PRD 8.4): if this practice has an
+        #     alignment, attach to each segment the words whose intervals
+        #     overlap it. No alignment / no overlap → words stays null.
+        alignment_words = load_alignment_words(job.practice_id)
+
         # 5. Write feedback segments, each pointing at the archive.
         for seg in segments:
+            words = overlapping_words(alignment_words, seg["timestamp_start"], seg["timestamp_end"])
             db.add(
                 models.AnalysisSegment(
                     job_id=job_id,
@@ -105,6 +128,7 @@ def run(job_id: str, session_factory):
                     feedback_tag=seg["feedback_tag"],
                     explanation=seg["explanation"],
                     coordinates_key=archive_key,
+                    words=json.dumps(words) if words else None,
                 )
             )
 

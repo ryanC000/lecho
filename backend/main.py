@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta, datetime
+import json
 import uuid
 
 import models, schemas, auth, clip_ingest, database, storage, migrations, worker_core
@@ -103,6 +104,18 @@ def get_practice_audio(practice_id: int, db: Session = Depends(database.get_db))
     if not storage.exists(practice.audio_url):
         raise HTTPException(status_code=404, detail="Reference audio file is missing from storage.")
     return storage.audio_response(practice.audio_url)
+
+@app.get("/practices/{practice_id}/alignment")
+def get_practice_alignment(practice_id: int, db: Session = Depends(database.get_db)):
+    """Serve a practice's word-alignment JSON (PRD 8.4), produced offline by
+    align_natives.py. Unauthenticated like the audio route; 404 when absent."""
+    practice = db.query(models.Practice).filter(models.Practice.id == practice_id).first()
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    key = storage.alignment_key(practice_id)
+    if not storage.exists(key):
+        raise HTTPException(status_code=404, detail="This practice has no alignment yet.")
+    return json.loads(storage.read_text(key))
 
 @app.post("/auth/register", response_model=schemas.UserResponse)
 def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
@@ -209,6 +222,18 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
     retryable = None
     if job.status == "FAILED":
         retryable = bool(job.practice and job.practice.audio_url)
+    # AnalysisSegment.words is stored as a JSON string; decode it to the list the
+    # schema expects (null when the segment has no anchored words).
+    segments = [
+        {
+            "timestamp_start": seg.timestamp_start,
+            "timestamp_end": seg.timestamp_end,
+            "feedback_tag": seg.feedback_tag,
+            "explanation": seg.explanation,
+            "words": json.loads(seg.words) if seg.words else None,
+        }
+        for seg in job.segments
+    ]
     return {
         "id": job.id,
         "status": job.status,
@@ -220,7 +245,7 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "error_message": job.error_message,
         "practice_id": job.practice_id,
         "transcript": job.practice.transcript if job.practice else None,
-        "segments": job.segments,
+        "segments": segments,
         "retryable": retryable,
     }
 
