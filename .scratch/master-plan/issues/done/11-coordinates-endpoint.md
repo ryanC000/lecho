@@ -4,8 +4,8 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (commit `1755aed`, 2026-07-20)
 
-- [ ] Owner of a SUCCESS job receives equal-length arrays under the contract keys
-- [ ] Non-owner gets 404; non-SUCCESS job gets 409
-- [ ] Payload is the stored archive verbatim — no recomputation
+- [x] Owner of a SUCCESS job receives equal-length arrays under the contract keys (`test_coordinates_returns_archive_for_owner`)
+- [x] Non-owner gets 404; non-SUCCESS job gets 409 (`test_coordinates_invisible_to_other_user`, `test_coordinates_conflict_when_not_success`)
+- [x] Payload is the stored archive verbatim — no recomputation

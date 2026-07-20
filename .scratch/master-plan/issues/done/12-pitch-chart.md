@@ -4,10 +4,10 @@
 
 **Blocked by:** 11 (coordinates endpoint). Word labels improve with 06 but don't require it.
 
-**Status:** ready-for-agent
+**Status:** done (commit `00c0736`, 2026-07-20)
 
-- [ ] Chart renders on a real job: two contours, unvoiced gaps blank, deviations colored
-- [ ] No new chart library added
-- [ ] Alignment 404 → chart renders without word labels
-- [ ] Screen-reader text list of flagged regions present
-- [ ] Fixture-based render test once the vitest scaffolding (ticket 01) exists
+- [x] Chart renders on a real job: two contours, unvoiced gaps blank, deviations colored
+- [x] No new chart library added (hand-rolled SVG in `PitchChart.jsx`)
+- [x] Alignment 404 → chart renders without word labels (`Results.test.jsx` degrade-gracefully case)
+- [x] Screen-reader text list of flagged regions present (`.sr-only` list; asserted in the render test)
+- [x] Fixture-based render test (`PitchChart.test.jsx`, `Results.test.jsx`)
