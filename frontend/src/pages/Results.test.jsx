@@ -50,7 +50,10 @@ describe('Results polling', () => {
             },
           ],
         })
-      );
+      )
+      // The SUCCESS payload triggers the chart's coordinate + alignment fetches;
+      // this test doesn't exercise the chart, so let them fail harmlessly.
+      .mockRejectedValue(new Error('no chart data in this test'));
 
     renderResults();
 
@@ -78,6 +81,57 @@ describe('Results polling', () => {
       await vi.advanceTimersByTimeAsync(6000);
     });
     expect(apiFetch.mock.calls.length).toBe(calls);
+  });
+
+  it('renders the pitch chart from the coordinate archive, degrading gracefully when alignment 404s', async () => {
+    const archive = {
+      times: [0.0, 0.1, 0.2, 0.3],
+      native_f0_hz: [200, 210, 215, 205],
+      user_f0_hz_aligned: [198, 209, 190, 185],
+      native_semitone: [0.0, 0.8, 1.2, 0.4],
+      user_semitone_aligned: [-0.2, 0.6, -3.0, -2.0],
+      native_rms: [0.5, 0.6, 0.5, 0.4],
+      user_rms_aligned: [0.5, 0.6, 0.4, 0.3],
+      voiced_masks: {
+        native: [true, true, true, true],
+        user_aligned: [true, true, true, true],
+      },
+    };
+    const alignment404 = Object.assign(new Error('no alignment'), { status: 404 });
+
+    // Path-routed mock: status poll, then the chart's two follow-up fetches.
+    apiFetch.mockImplementation((path) => {
+      if (path === '/jobs/job-1') {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'job-1',
+            status: 'SUCCESS',
+            score: 88.5,
+            practice_id: 7,
+            segments: [
+              {
+                timestamp_start: 0.2,
+                timestamp_end: 0.3,
+                feedback_tag: 'INTONATION_DROP',
+                explanation: 'Your pitch dips below the native speaker here.',
+              },
+            ],
+          })
+        );
+      }
+      if (path === '/jobs/job-1/coordinates') return Promise.resolve(jsonResponse(archive));
+      if (path === '/practices/7/alignment') return Promise.reject(alignment404);
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+    renderResults();
+    // Flush the status poll and both follow-up fetches.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    // Chart rendered despite the alignment 404, with the SR flagged-region list.
+    expect(screen.getByRole('img')).toBeInTheDocument();
+    expect(screen.getByText(/From 0.2s to 0.3s/)).toBeInTheDocument();
   });
 
   it('renders a retryable failure with Try Again', async () => {

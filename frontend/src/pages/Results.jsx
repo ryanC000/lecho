@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import AccuracyRing from '../components/AccuracyRing';
 import TranslationOverlay from '../components/TranslationOverlay';
+import PitchChart from '../components/PitchChart';
 import { apiFetch } from '../utils/auth';
 
 const POLL_INTERVAL_MS = 2000;
@@ -10,6 +11,8 @@ export default function Results() {
   const { jobId } = useParams();
   const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
+  const [coordinates, setCoordinates] = useState(null);
+  const [words, setWords] = useState(null);
   const timerRef = useRef(null);
 
   useEffect(() => {
@@ -43,6 +46,29 @@ export default function Results() {
       clearInterval(timerRef.current);
     };
   }, [jobId]);
+
+  // Once the job succeeds, load the coordinate archive for the pitch chart and,
+  // best-effort, the practice's word alignment. A missing alignment (404 today,
+  // until ticket 06 lands) just leaves the chart without x-axis word labels; a
+  // failed coordinate fetch simply omits the chart.
+  useEffect(() => {
+    if (job?.status !== 'SUCCESS') return;
+    let cancelled = false;
+
+    apiFetch(`/jobs/${jobId}/coordinates`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) setCoordinates(data); })
+      .catch(() => { /* no chart if the archive can't be loaded */ });
+
+    if (job.practice_id != null) {
+      apiFetch(`/practices/${job.practice_id}/alignment`)
+        .then((res) => res.json())
+        .then((data) => { if (!cancelled) setWords(data.words || null); })
+        .catch(() => { /* no word labels without an alignment */ });
+    }
+
+    return () => { cancelled = true; };
+  }, [job?.status, job?.practice_id, jobId]);
 
   if (error) {
     return (
@@ -122,6 +148,14 @@ export default function Results() {
       )}
 
       <hr />
+
+      {/* ── Pitch overlay chart ── */}
+      {coordinates && (
+        <section className="flat-section">
+          <h3>Pitch Contour ♪</h3>
+          <PitchChart coordinates={coordinates} words={words} segments={segments} />
+        </section>
+      )}
 
       {/* ── Detailed Feedback ── */}
       <section className="flat-section">
