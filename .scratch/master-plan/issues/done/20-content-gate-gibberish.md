@@ -12,7 +12,11 @@
 
 **Fix direction (owner deferred):** a content *gate*, not a graded axis — force-align the practice transcript against the take (MFA French models, Task 2.1 track, owner-approved 2026-07-11); reject unintelligible takes with "we couldn't make out the line" before scoring. Prerequisite: per-practice transcripts (`napoleon_script.txt` is currently empty). Optional hardening: add recorded gibberish takes to the calibration corpus as a new take kind with an emulation-vs-gibberish gate so the tuner can never again pick content-blind constants.
 
-- [ ] Per-practice transcripts exist (practice 7's script file is empty)
-- [ ] MFA forced-alignment gate rejects a gibberish take end-to-end
-- [ ] Gibberish take kind added to `native_audio/manifest.json` + `calibrate.py` gate
-- [ ] Rerun `calibrate.py --tune`; decision log updated
+- [x] Per-practice transcripts exist (~~practice 7's script file is empty~~ — stale: transcripts live in `Practice.transcript` in the DB, not a script file; practice 7's is populated and already produced `alignments/7.json`)
+- [~] MFA forced-alignment gate rejects a gibberish take end-to-end — **mechanism done & validated end-to-end on a genuine take** (`content_gate.assess` runs MFA, reads `speech_log_likelihood`, decides; wired into `worker_core.run` before scoring, fails open). The *reject* half is 🧑 **human-gated**: owner must re-record a gibberish take and graduate `CONTENT_GATE_MIN_SPEECH_LOGLIK` (it is `None` = measure-only until then, so an uncalibrated gate can't wrongly block learners).
+- [~] Gibberish take kind added to `native_audio/manifest.json` + `calibrate.py` gate — `calibrate.py` now supports `gibberish` as a **diagnostic-only** take kind (never a tuning constraint — the diagnosis proved scoring can't gate wrong words). Adding `gibberish` WAVs + manifest entries is 🧑 **human-gated** (the takes were deleted; `load_manifest` would error on missing files).
+- [~] Rerun `calibrate.py --tune`; decision log updated — Decision log updated (2026-07-21). The `--tune` rerun is 🧑 **human-gated** on the gibberish recordings and won't move constants (gibberish is diagnostic-only).
+
+---
+
+**Status: done (mechanism) — 2026-07-21, commit `44e7767`.** Content gate implemented, wired always-on into the worker (owner-approved), and validated end-to-end on a genuine take (`speech_log_likelihood` -47.9, passes). Remaining boxes are human-gated on the owner re-recording the deleted ~30s gibberish takes, then graduating the reject threshold (`python content_gate.py <take.wav> "<transcript>"` on genuine + gibberish) and adding them to the manifest. Full backend suite green (49 passed, 1 MFA integration skipped).
