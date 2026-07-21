@@ -47,7 +47,14 @@ GATE_MARGIN_FLAT_MIN = 3.0   # flat native: emulation vs low_effort
 # the meaningful bad take becomes low_effort (ADR 0003).
 FLAT_NATIVE_ST_STD = 3.0
 
-TAKE_KINDS = ("emulation", "monotone", "low_effort")
+# "gibberish" is a diagnostic take kind only (ticket 20): prosody scoring
+# provably cannot gate wrong words (2026-07-13 report — one gibberish take beat
+# the genuine emulation on every axis), so it never constrains the tuner. Its
+# defense is the MFA content gate (content_gate.py); here it is printed in the
+# table so the owner can confirm gibberish still scores like a real take (i.e.
+# the content gate is load-bearing) once such a take is recorded and added to
+# the manifest.
+TAKE_KINDS = ("emulation", "monotone", "low_effort", "gibberish")
 
 # --tune search space, keyed by the dsp.py constant each axis patches.
 TUNE_GRID = {

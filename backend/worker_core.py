@@ -13,6 +13,7 @@ Importing this module has no side effects.
 """
 import json
 
+import content_gate
 import dsp
 import models
 import storage
@@ -98,6 +99,17 @@ def run(job_id: str, session_factory):
                 )
                 if peak_ncc > dsp.NCC_BLEED_THRESHOLD:
                     raise dsp.BleedDetectedError(BLEED_MESSAGE)
+            # Content gate (ticket 20): force-align the practice transcript
+            # against the take and reject unintelligible ones before scoring —
+            # prosody alone can't tell gibberish from a genuine take. Fails
+            # open (a broken MFA env scores anyway); only a confident
+            # low-likelihood signal rejects.
+            transcript = job.practice.transcript if job.practice else None
+            if transcript:
+                gate = content_gate.assess(user_path, transcript)
+                if gate.assessed and not gate.passed:
+                    fail_job(db, job, content_gate.REJECT_MESSAGE)
+                    return
             native_feat = dsp.features_for(native_path)
             user_feat = dsp.features_for(user_path)
             aligned = dsp.align(native_feat, user_feat)

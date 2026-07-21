@@ -30,6 +30,20 @@ PASSWORD = "test-password-1"
 NATIVE_DURATION_S = 3.0
 
 
+@pytest.fixture(autouse=True)
+def _skip_content_gate(monkeypatch):
+    """Keep the MFA content gate (ticket 20) out of the hermetic suite — it
+    shells out to conda/MFA (~45s per job). Its own decision logic and parsing
+    are covered in test_content_gate.py; here it fails open so the worker scores
+    exactly as before."""
+    import content_gate
+
+    monkeypatch.setattr(
+        content_gate, "assess",
+        lambda *a, **k: content_gate.ContentGateResult(False, True, None, "stubbed in tests"),
+    )
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """TestClient on a temp DB + temp storage root, with one seeded practice
