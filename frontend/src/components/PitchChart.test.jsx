@@ -39,9 +39,17 @@ const maxDx = (el) => {
   for (let i = 1; i < pts.length; i++) m = Math.max(m, Math.abs(pts[i][0] - pts[i - 1][0]));
   return m;
 };
+// Every x drawn across all user polylines (the frames actually rendered).
+const userXs = (container) =>
+  [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')]
+    .flatMap((el) => points(el).map((p) => p[0]));
+const hasXnear = (xs, x) => xs.some((v) => Math.abs(v - x) < 1);
+// The rendered x of frame index round(t*10) off the (contiguous) native line.
+const frameX = (container, t) =>
+  points(container.querySelector('.pitch-line-native'))[Math.round(t * 10)][0];
 
 describe('PitchChart', () => {
-  it('bridges a short gap, breaks at a long one, and colors the deviation', () => {
+  it('draws through a short gap, breaks at a long one, and colors the deviation', () => {
     const { container } = render(<PitchChart coordinates={coordinates} words={null} segments={segments} />);
 
     expect(screen.getByRole('img')).toBeInTheDocument();
@@ -50,13 +58,16 @@ describe('PitchChart', () => {
     const nativeEl = container.querySelector('.pitch-line-native');
     const frameW = maxDx(nativeEl);
 
-    // Across all user polylines, the largest within-line reach is ~2 frames
-    // (the bridged 1-frame gap) — proving the short gap was bridged but the
-    // 3-frame gap was NOT (that one is a real break between separate polylines).
+    // No user polyline ever jumps more than ~1 frame: the short (1-frame) gap is
+    // drawn *through* its interpolated frame — a continuous curve, not a chord.
     const userLines = [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')];
-    const reach = Math.max(...userLines.map(maxDx));
-    expect(reach).toBeGreaterThan(1.5 * frameW); // short gap bridged
-    expect(reach).toBeLessThan(3 * frameW);      // long gap left as a break
+    expect(Math.max(...userLines.map(maxDx))).toBeLessThan(1.5 * frameW);
+
+    // The short gap's frame (t=0.2) IS drawn; the long gap's frames (t=0.5–0.7)
+    // are NOT — proving the 1-frame gap was bridged and the 3-frame gap broke.
+    const xs = userXs(container);
+    expect(hasXnear(xs, frameX(container, 0.2))).toBe(true);  // short gap bridged (drawn through)
+    expect(hasXnear(xs, frameX(container, 0.6))).toBe(false); // long gap is a real break
 
     // The ≥2-semitone run renders in the warning color as a drawn segment.
     const warnLines = container.querySelectorAll('.pitch-line-user-warn');
@@ -81,17 +92,71 @@ describe('PitchChart', () => {
     expect(Math.max(...bandYs)).toBeGreaterThan(Math.max(...nativeYs));
   });
 
-  it('bridges a long gap that falls within a single word', () => {
+  it('draws through a long gap that falls within a single word', () => {
     // With the whole utterance under one word, the 3-frame gap is within-word,
-    // so it's bridged rather than broken — a single user polyline now reaches
-    // across it (contrast the words=null case, which breaks there).
+    // so it's bridged — the contour is drawn continuously through the gap's
+    // interpolated frames (contrast the words=null case, which breaks there and
+    // omits t=0.5–0.7 entirely).
     const words = [{ word: 'liaison', start: 0.0, end: 1.0 }];
     const { container } = render(<PitchChart coordinates={coordinates} words={words} segments={segments} />);
 
     const frameW = maxDx(container.querySelector('.pitch-line-native'));
+
+    // Every frame across the gap is drawn (no hole) and the line stays continuous.
+    const xs = userXs(container);
+    expect(hasXnear(xs, frameX(container, 0.5))).toBe(true);
+    expect(hasXnear(xs, frameX(container, 0.6))).toBe(true);
+    expect(hasXnear(xs, frameX(container, 0.7))).toBe(true);
     const userLines = [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')];
-    const reach = Math.max(...userLines.map(maxDx));
-    expect(reach).toBeGreaterThan(3 * frameW); // the 3-frame gap was bridged, not broken
+    expect(Math.max(...userLines.map(maxDx))).toBeLessThan(1.5 * frameW);
+  });
+
+  it('folds a multi-frame octave error out of the geometry and out of the coloring', () => {
+    // A 2-frame +12 st harmonic-locking error that median-3 alone can't remove
+    // (both spike frames survive a 3-window median). Octave-unwrap must fold it
+    // back so the drawn user contour stays flat instead of leaping an octave —
+    // AND the octave-reduced deviation must keep those frames OUT of the warm
+    // "off pitch" color, so we never draw a warm segment flat inside the band.
+    const octave = {
+      times: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+      native_semitone: [0, 0, 0, 0, 0, 0],
+      user_semitone_aligned: [0, 0, 12, 12, 0, 0],
+      voiced_masks: {
+        native: [true, true, true, true, true, true],
+        user_aligned: [true, true, true, true, true, true],
+      },
+    };
+    const { container } = render(<PitchChart coordinates={octave} words={null} segments={[]} />);
+
+    const userYs = [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')]
+      .flatMap((el) => points(el).map((p) => p[1]));
+    // The whole user line is essentially flat — the octave spike is gone. (A
+    // surviving +12 st spike would throw the two frames far off the others.)
+    expect(Math.max(...userYs) - Math.min(...userYs)).toBeLessThan(5);
+    // The octave gap is the same pitch class → not painted as off-pitch.
+    expect(container.querySelectorAll('.pitch-line-user-warn').length).toBe(0);
+  });
+
+  it('re-anchors an octave-offset first frame instead of shifting the whole line', () => {
+    // The very first frame is octave-doubled (+12). A naive continuity unwrap
+    // would fold every later frame up to match it, riding the whole contour an
+    // octave high; the mean re-anchor pulls it back to the true (~0) baseline.
+    const badFirst = {
+      times: [0.0, 0.1, 0.2, 0.3, 0.4],
+      native_semitone: [0, 0, 0, 0, 0],
+      user_semitone_aligned: [12, 0, 0, 0, 0],
+      voiced_masks: {
+        native: [true, true, true, true, true],
+        user_aligned: [true, true, true, true, true],
+      },
+    };
+    const { container } = render(<PitchChart coordinates={badFirst} words={null} segments={[]} />);
+    const nativeYs = points(container.querySelector('.pitch-line-native')).map((p) => p[1]);
+    const userYs = [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')]
+      .flatMap((el) => points(el).map((p) => p[1]));
+    // The user contour sits on the native baseline (~0), not an octave above it.
+    const nativeMid = nativeYs[2];
+    expect(Math.max(...userYs.map((y) => Math.abs(y - nativeMid)))).toBeLessThan(5);
   });
 
   it('renders word labels when an alignment is provided', () => {

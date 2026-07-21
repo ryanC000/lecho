@@ -12,19 +12,23 @@ import React from 'react';
  * leaves that band (the same threshold the backend uses to flag segments).
  *
  * Continuity: the semitone tracks are already gap-interpolated by the worker,
- * so we draw straight through the sub-200ms F0 dropouts of unvoiced consonants
- * (p/t/k/s/f) that aren't real pitch resets. We break the line only at genuine
- * pauses — when the alignment is present, an unvoiced run that falls in
- * inter-word silence and lasts longer than PAUSE_S; otherwise a frame-count
- * fallback (MAX_BRIDGE_S). We never draw a pitch line across a pause the learner
- * actually took, but a stop *within* a word stays one contour.
+ * so the drawn line follows that interpolated curve *through* the F0 dropouts of
+ * unvoiced consonants (p/t/k/s/f) — the geometry is one continuous contour, not
+ * a series of voiced fragments stitched with straight chords. We cut the line
+ * only at genuine pauses — when the alignment is present, an unvoiced run that
+ * falls in inter-word silence and lasts longer than PAUSE_S; otherwise a
+ * frame-count fallback (MAX_BRIDGE_S). We never draw a pitch line across a pause
+ * the learner actually took, but a stop *within* a word stays one contour.
  *
- * A median-3 de-spike pass on the drawn geometry removes single-frame F0
- * octave-tracking errors (×2–4 spikes) and frame jitter without flattening
- * genuine 2-frame pitch peaks, and a robust 2–98th-percentile y-domain keeps a
- * stray outlier from squashing the axis. Deviation coloring is computed from the
- * RAW tracks (not the smoothed geometry) so it stays in sync with the backend's
- * segment flags.
+ * De-spiking runs in two passes on the drawn geometry. First an octave-unwrap
+ * folds any frame-to-frame jump of ≥ half an octave back by whole octaves: F0
+ * trackers occasionally lock to a harmonic for a few frames (±12/±24 st errors
+ * that median-3 alone can't remove), whereas a genuine intonation move between
+ * 10 ms frames is well under 6 st. Then a median-3 pass removes residual
+ * single-frame jitter without flattening genuine 2-frame pitch peaks. A robust
+ * 2–98th-percentile y-domain keeps a stray outlier from squashing the axis.
+ * Deviation coloring is computed from the RAW tracks (not the smoothed geometry)
+ * so it stays in sync with the backend's segment flags.
  *
  * Props:
  *   coordinates — the /jobs/{id}/coordinates archive (fixed worker contract).
@@ -77,6 +81,25 @@ function percentile(sorted, p) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
+/** Octave-unwrap: fold each frame toward its predecessor by whole octaves (12
+ *  st) so no frame-to-frame step exceeds a half-octave. Removes the multi-frame
+ *  ±12/±24 st harmonic-locking errors of the F0 tracker (which median-3 can't),
+ *  while leaving sub-6-st intonation moves untouched. The result is re-anchored
+ *  to the track's own mean (≈0, since the archive is per-clip normalized) so a
+ *  bad first frame can't shift the whole contour by an octave. */
+function octaveUnwrap(arr) {
+  if (arr.length === 0) return arr;
+  const out = new Array(arr.length);
+  out[0] = arr[0];
+  let sum = out[0];
+  for (let i = 1; i < arr.length; i++) {
+    out[i] = arr[i] - 12 * Math.round((arr[i] - out[i - 1]) / 12);
+    sum += out[i];
+  }
+  const drift = 12 * Math.round(sum / arr.length / 12); // whole-octave drift, if any
+  return drift ? out.map((v) => v - drift) : out;
+}
+
 /** Median-3 de-spike: each frame becomes the median of itself and its two
  *  neighbors (window shrinks at the ends). Kills single-frame octave errors and
  *  jitter while preserving genuine 2-frame pitch peaks. */
@@ -93,21 +116,26 @@ function median3(arr) {
 
 const wordCoversTime = (words, t) => words.some((w) => t >= w.start && t <= w.end);
 
-/** Split a contour into continuity segments — arrays of drawable frames. The
- *  line breaks only where a run of non-drawable (unvoiced) frames is judged a
- *  real pause by isPause; shorter gaps are bridged (the segment continues,
- *  connecting across them with a straight line to the next drawable frame). */
+/** Split a contour into continuity segments — arrays of consecutive frames. The
+ *  line breaks only where a run of unvoiced frames is judged a real pause by
+ *  isPause; a shorter gap is bridged by drawing *through* its interpolated
+ *  frames, so the contour follows the true curve across the dropout rather than
+ *  a straight chord. A break discards its silent frames (no line over a pause). */
 function segment(frames, isPause) {
   const runs = [];
   let current = null;
-  let gap = [];       // consecutive non-drawable frames since the last drawn one
-  let prev = null;    // last drawn frame
+  let gap = [];       // consecutive unvoiced frames since the last voiced one
+  let prev = null;    // last voiced frame
   for (const f of frames) {
-    if (!f.drawable) {
+    if (!f.voiced) {
       gap.push(f);
       continue;
     }
-    if (current && gap.length && isPause(prev, f, gap)) current = null; // pause → break
+    if (current && gap.length && isPause(prev, f, gap)) {
+      current = null;                          // pause → break, drop the silent frames
+    } else if (current) {
+      for (const g of gap) current.push(g);    // bridge → draw through the interpolated frames
+    }
     if (!current) {
       current = [];
       runs.push(current);
@@ -146,9 +174,10 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
   const nativeVoiced = voiced_masks.native;
   const userVoiced = voiced_masks.user_aligned;
 
-  // Smooth only the drawn geometry; warn state below stays on the raw tracks.
-  const smNative = median3(native_semitone);
-  const smUser = median3(user_semitone_aligned);
+  // Smooth only the drawn geometry (octave-unwrap then median-3); warn state
+  // below stays on the raw tracks.
+  const smNative = median3(octaveUnwrap(native_semitone));
+  const smUser = median3(octaveUnwrap(user_semitone_aligned));
 
   // Robust y-domain over the voiced smoothed frames, including the native ±
   // DEVIATION band edges so the target band is always fully visible. The
@@ -183,19 +212,26 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
     y: yScale(smNative[i]),
     st: smNative[i],
     t,
-    drawable: nativeVoiced[i],
+    voiced: nativeVoiced[i],
     warn: false,
   }));
-  const userFrames = times.map((t, i) => ({
-    x: xScale(t),
-    y: yScale(smUser[i]),
-    t,
-    drawable: userVoiced[i],
+  const userFrames = times.map((t, i) => {
     // Deviation coloring is only meaningful where both contours are voiced, and
-    // is measured on the RAW tracks to match the backend's segment flags.
-    warn: nativeVoiced[i] && userVoiced[i] &&
-      Math.abs(native_semitone[i] - user_semitone_aligned[i]) >= DEVIATION_SEMITONES,
-  }));
+    // is measured on the RAW tracks to match the backend's segment flags. We
+    // octave-reduce the gap first (fold into [0, 6]): a whole-octave difference
+    // is the same pitch class — a tracker harmonic-lock, the same artifact
+    // octaveUnwrap folds out of the geometry — not an intonation error, so it
+    // must not paint a warm segment sitting flat inside the target band.
+    const dev = Math.abs(native_semitone[i] - user_semitone_aligned[i]);
+    const octaveReduced = Math.abs(dev - 12 * Math.round(dev / 12));
+    return {
+      x: xScale(t),
+      y: yScale(smUser[i]),
+      t,
+      voiced: userVoiced[i],
+      warn: nativeVoiced[i] && userVoiced[i] && octaveReduced >= DEVIATION_SEMITONES,
+    };
+  });
 
   // Break at genuine pauses: word-aware when an alignment is present, else a
   // frame-count fallback off the native hop.
