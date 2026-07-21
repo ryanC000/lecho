@@ -6,48 +6,53 @@ import React from 'react';
  * Overlays the native and user pitch contours in *semitones relative to each
  * speaker's own median* (the archive's per-clip-normalized tracks), so two
  * voices in different registers land on the same 0 baseline and the intonation
- * SHAPE can be compared directly. User-line runs where the absolute semitone
- * gap from the native reaches DEVIATION_SEMITONES render in the warning color.
+ * SHAPE can be compared directly. A shaded target band of native ±
+ * DEVIATION_SEMITONES sits behind the lines so the learner can see the
+ * acceptable pitch range at a glance; the user line runs warm wherever it
+ * leaves that band (the same threshold the backend uses to flag segments).
  *
- * Continuity: a raw voiced mask fragments the contour at every unvoiced
- * consonant (p/t/k/s/f — sub-200ms F0 dropouts that aren't real pitch resets).
- * We bridge non-drawable gaps up to MAX_BRIDGE_S so the line reads as one
- * contour through a word, but keep genuine pauses (longer silences) as real
- * breaks — we never draw a pitch line across a pause the learner actually took.
+ * Continuity: the semitone tracks are already gap-interpolated by the worker,
+ * so we draw straight through the sub-200ms F0 dropouts of unvoiced consonants
+ * (p/t/k/s/f) that aren't real pitch resets. We break the line only at genuine
+ * pauses — when the alignment is present, an unvoiced run that falls in
+ * inter-word silence and lasts longer than PAUSE_S; otherwise a frame-count
+ * fallback (MAX_BRIDGE_S). We never draw a pitch line across a pause the learner
+ * actually took, but a stop *within* a word stays one contour.
  *
- * A handful of frames are octave-tracking errors (F0 estimated at 2–4× the true
- * pitch → +12…+24 st from the median); left in, they blow up the y-domain and
- * squash the real contours into thin bands. We exclude frames more than an
- * octave from the median from the drawn lines (they break like an unvoiced gap)
- * so the axis reflects real speech, whose excursions stay well inside an octave.
+ * A median-3 de-spike pass on the drawn geometry removes single-frame F0
+ * octave-tracking errors (×2–4 spikes) and frame jitter without flattening
+ * genuine 2-frame pitch peaks, and a robust 2–98th-percentile y-domain keeps a
+ * stray outlier from squashing the axis. Deviation coloring is computed from the
+ * RAW tracks (not the smoothed geometry) so it stays in sync with the backend's
+ * segment flags.
  *
  * Props:
  *   coordinates — the /jobs/{id}/coordinates archive (fixed worker contract).
  *   words       — optional [{word, start, end}] from the practice alignment;
- *                 x-axis labels degrade gracefully to nothing when absent.
+ *                 enables word-aware pause breaks and x-axis labels, both of
+ *                 which degrade gracefully to a time-threshold / no labels when
+ *                 absent.
  *   segments    — the job's feedback segments, reused for the screen-reader
  *                 summary of flagged regions.
  */
 
 // Same constant the backend uses to flag pitch-deviation segments
-// (dsp.SEGMENT_PITCH_THRESHOLD_SEMITONES). Kept in sync by hand.
+// (dsp.SEGMENT_PITCH_THRESHOLD_SEMITONES). Kept in sync by hand. Also the
+// half-height of the target band.
 const DEVIATION_SEMITONES = 2.0;
 
-// Non-drawable gaps at or below this length are bridged (unvoiced consonants /
-// short stops); longer ones are genuine pauses and stay real breaks.
+// Fallback (no alignment): unvoiced runs at or below this length are bridged
+// (unvoiced consonants / short stops); longer ones are treated as pauses.
 const MAX_BRIDGE_S = 0.2;
+
+// Word-aware: an unvoiced run in inter-word silence longer than this is a real
+// pause and breaks the line; anything shorter, or anything inside a word, is
+// bridged.
+const PAUSE_S = 0.15;
 
 const VB_W = 1000;
 const VB_H = 320;
 const PAD = { left: 12, right: 12, top: 16, bottom: 40 };
-
-// Frames more than an octave from the speaker's median (the tracks are
-// normalized so the median is 0 st) are treated as F0 octave-tracking errors
-// and excluded from the drawn lines and the y-domain. Real speech excursions in
-// one utterance stay well inside an octave; ×2–4 tracking errors land at +12 st
-// and up, so this cleanly separates them without touching genuine pitch peaks.
-const OCTAVE_ST = 12;
-const withinOctave = (v) => Math.abs(v) <= OCTAVE_ST;
 
 /** min/max of an array via reduce (avoids Math.min(...spread) stack limits on
  *  the ~1500-point archives). Returns null for an empty array. */
@@ -62,36 +67,75 @@ function extent(values) {
   return [lo, hi];
 }
 
-/** Split a contour into drawn polylines, tagging each frame's warn state.
- *  Returns a list of { warn, points: [[x,y], ...] }. The line breaks only when
- *  a run of non-drawable frames exceeds maxGap (a genuine pause) — shorter gaps
- *  are bridged by a straight segment to the next drawable point. A warn-state
- *  change also splits, seeding the next run with the previous point so the
- *  colored segments stay visually connected. */
-function buildRuns(frames, maxGap) {
+/** Linear-interpolated percentile of a *sorted* array (p in [0,100]). */
+function percentile(sorted, p) {
+  if (sorted.length === 0) return null;
+  const idx = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+/** Median-3 de-spike: each frame becomes the median of itself and its two
+ *  neighbors (window shrinks at the ends). Kills single-frame octave errors and
+ *  jitter while preserving genuine 2-frame pitch peaks. */
+function median3(arr) {
+  const out = new Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    const a = arr[i];
+    const b = i > 0 ? arr[i - 1] : a;
+    const c = i < arr.length - 1 ? arr[i + 1] : a;
+    out[i] = a + b + c - Math.min(a, b, c) - Math.max(a, b, c); // median of 3
+  }
+  return out;
+}
+
+const wordCoversTime = (words, t) => words.some((w) => t >= w.start && t <= w.end);
+
+/** Split a contour into continuity segments — arrays of drawable frames. The
+ *  line breaks only where a run of non-drawable (unvoiced) frames is judged a
+ *  real pause by isPause; shorter gaps are bridged (the segment continues,
+ *  connecting across them with a straight line to the next drawable frame). */
+function segment(frames, isPause) {
   const runs = [];
   let current = null;
-  let gap = 0; // consecutive non-drawable frames since the last drawn point
+  let gap = [];       // consecutive non-drawable frames since the last drawn one
+  let prev = null;    // last drawn frame
   for (const f of frames) {
     if (!f.drawable) {
-      gap += 1;
+      gap.push(f);
       continue;
     }
-    if (current && gap > maxGap) current = null; // pause → real break
-    if (current && current.warn !== f.warn) {
-      // Color change: start a new run seeded with the previous point so the
-      // segments stay connected.
-      const prev = current.points[current.points.length - 1];
-      current = { warn: f.warn, points: [prev] };
-      runs.push(current);
-    } else if (!current) {
-      current = { warn: f.warn, points: [] };
+    if (current && gap.length && isPause(prev, f, gap)) current = null; // pause → break
+    if (!current) {
+      current = [];
       runs.push(current);
     }
-    current.points.push([f.x, f.y]);
-    gap = 0;
+    current.push(f);
+    prev = f;
+    gap = [];
   }
   return runs;
+}
+
+/** Split one continuity segment into polylines by warn state, seeding each new
+ *  run with the previous point so the colored segments stay visually connected. */
+function splitByWarn(seg) {
+  const parts = [];
+  let current = null;
+  for (const f of seg) {
+    if (current && current.warn !== f.warn) {
+      const prev = current.points[current.points.length - 1];
+      current = { warn: f.warn, points: [prev] };
+      parts.push(current);
+    } else if (!current) {
+      current = { warn: f.warn, points: [] };
+      parts.push(current);
+    }
+    current.points.push([f.x, f.y]);
+  }
+  return parts;
 }
 
 const toPoints = (pts) => pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
@@ -102,14 +146,24 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
   const nativeVoiced = voiced_masks.native;
   const userVoiced = voiced_masks.user_aligned;
 
-  // y-domain over the within-octave voiced semitone frames of both contours, so
-  // octave-error outliers neither squash the axis nor get drawn.
-  const keptValues = [];
+  // Smooth only the drawn geometry; warn state below stays on the raw tracks.
+  const smNative = median3(native_semitone);
+  const smUser = median3(user_semitone_aligned);
+
+  // Robust y-domain over the voiced smoothed frames, including the native ±
+  // DEVIATION band edges so the target band is always fully visible. The
+  // 2–98th percentile trims residual outliers without deleting any frame.
+  const domainValues = [];
   for (let i = 0; i < times.length; i++) {
-    if (nativeVoiced[i] && withinOctave(native_semitone[i])) keptValues.push(native_semitone[i]);
-    if (userVoiced[i] && withinOctave(user_semitone_aligned[i])) keptValues.push(user_semitone_aligned[i]);
+    if (nativeVoiced[i]) {
+      domainValues.push(smNative[i] - DEVIATION_SEMITONES, smNative[i] + DEVIATION_SEMITONES);
+    }
+    if (userVoiced[i]) domainValues.push(smUser[i]);
   }
-  let [loBound, hiBound] = extent(keptValues) || [-1, 1];    // nothing kept → flat guard below
+  domainValues.sort((a, b) => a - b);
+  let loBound = percentile(domainValues, 2);
+  let hiBound = percentile(domainValues, 98);
+  if (loBound == null) [loBound, hiBound] = [-1, 1];         // nothing voiced → flat guard
   if (hiBound === loBound) { loBound -= 1; hiBound += 1; }   // flat-contour guard
   const pad = (hiBound - loBound) * 0.08;
   const yMin = loBound - pad;
@@ -124,28 +178,36 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
   const xScale = (t) => PAD.left + ((t - t0) / tSpan) * plotW;
   const yScale = (st) => PAD.top + (1 - (st - yMin) / (yMax - yMin)) * plotH;
 
-  // A frame is drawable only if voiced AND within an octave — an out-of-range
-  // octave error is skipped like an unvoiced gap.
   const nativeFrames = times.map((t, i) => ({
     x: xScale(t),
-    y: yScale(native_semitone[i]),
-    drawable: nativeVoiced[i] && withinOctave(native_semitone[i]),
+    y: yScale(smNative[i]),
+    st: smNative[i],
+    t,
+    drawable: nativeVoiced[i],
     warn: false,
   }));
   const userFrames = times.map((t, i) => ({
     x: xScale(t),
-    y: yScale(user_semitone_aligned[i]),
-    drawable: userVoiced[i] && withinOctave(user_semitone_aligned[i]),
-    // Deviation coloring is only meaningful where both contours are voiced.
+    y: yScale(smUser[i]),
+    t,
+    drawable: userVoiced[i],
+    // Deviation coloring is only meaningful where both contours are voiced, and
+    // is measured on the RAW tracks to match the backend's segment flags.
     warn: nativeVoiced[i] && userVoiced[i] &&
       Math.abs(native_semitone[i] - user_semitone_aligned[i]) >= DEVIATION_SEMITONES,
   }));
 
-  // Bridge gaps up to MAX_BRIDGE_S, measured in frames off the native hop.
+  // Break at genuine pauses: word-aware when an alignment is present, else a
+  // frame-count fallback off the native hop.
   const hop = times.length > 1 ? times[1] - times[0] : 0.01;
   const maxGap = Math.max(1, Math.round(MAX_BRIDGE_S / hop));
-  const nativeRuns = buildRuns(nativeFrames, maxGap);
-  const userRuns = buildRuns(userFrames, maxGap);
+  const isPause = words && words.length
+    ? (prev, curr, gap) =>
+        gap.every((g) => !wordCoversTime(words, g.t)) && curr.t - prev.t > PAUSE_S
+    : (prev, curr, gap) => gap.length > maxGap;
+
+  const nativeSegments = segment(nativeFrames, isPause);
+  const userRuns = segment(userFrames, isPause).flatMap(splitByWarn);
   const zeroY = yMin < 0 && yMax > 0 ? yScale(0) : null;
 
   return (
@@ -155,8 +217,21 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         preserveAspectRatio="none"
         role="img"
-        aria-label="Pitch overlay chart comparing your intonation shape to the native speaker's over time, in semitones relative to each speaker's median."
+        aria-label="Pitch overlay chart comparing your intonation shape to the native speaker's over time, in semitones relative to each speaker's median, with a shaded target band around the native contour."
       >
+        {/* Target band — native ± DEVIATION_SEMITONES, drawn first so it sits
+            behind the baseline and contours. Breaks at pauses with the line. */}
+        {nativeSegments.map((seg, i) => {
+          const upper = seg.map((f) => [f.x, yScale(f.st + DEVIATION_SEMITONES)]);
+          const lower = seg.map((f) => [f.x, yScale(f.st - DEVIATION_SEMITONES)]);
+          return (
+            <polygon
+              key={`band${i}`}
+              className="pitch-target-band"
+              points={toPoints(upper.concat(lower.reverse()))}
+            />
+          );
+        })}
         {/* Median baseline (0 semitones) — the shared reference both contours
             are normalized against. */}
         {zeroY != null && (
@@ -171,14 +246,14 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
           />
         )}
         {/* Native contour — neutral ink */}
-        {nativeRuns.map((run, i) => (
+        {nativeSegments.map((seg, i) => (
           <polyline
             key={`n${i}`}
             className="pitch-line-native"
             fill="none"
             stroke="var(--color-ink-light)"
             strokeWidth="3"
-            points={toPoints(run.points)}
+            points={toPoints(seg.map((f) => [f.x, f.y]))}
           />
         ))}
         {/* User contour — accent, warm where the pitch gap is large */}
@@ -213,6 +288,7 @@ export default function PitchChart({ coordinates, words, segments = [] }) {
       </svg>
 
       <div className="pitch-chart-legend" aria-hidden="true">
+        <span><span className="swatch swatch-band" /> In range</span>
         <span><span className="swatch swatch-native" /> Native</span>
         <span><span className="swatch swatch-user" /> You</span>
         <span><span className="swatch swatch-warn" /> Off pitch</span>

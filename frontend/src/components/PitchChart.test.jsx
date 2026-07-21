@@ -64,6 +64,36 @@ describe('PitchChart', () => {
     expect(warnLines[0].getAttribute('points').trim()).toContain(' '); // ≥2 points
   });
 
+  it('renders a target band that brackets the native contour', () => {
+    const { container } = render(<PitchChart coordinates={coordinates} words={null} segments={segments} />);
+
+    // Native is fully voiced → one continuous band polygon.
+    const bands = container.querySelectorAll('.pitch-target-band');
+    expect(bands.length).toBeGreaterThanOrEqual(1);
+
+    // The band (native ± 2 st) is wider in y than the native line at both edges:
+    // its top edge sits above the line's highest point and its bottom below the
+    // lowest (y grows downward, so smaller y = higher on screen).
+    const ys = (el) => points(el).map((p) => p[1]);
+    const bandYs = ys(bands[0]);
+    const nativeYs = ys(container.querySelector('.pitch-line-native'));
+    expect(Math.min(...bandYs)).toBeLessThan(Math.min(...nativeYs));
+    expect(Math.max(...bandYs)).toBeGreaterThan(Math.max(...nativeYs));
+  });
+
+  it('bridges a long gap that falls within a single word', () => {
+    // With the whole utterance under one word, the 3-frame gap is within-word,
+    // so it's bridged rather than broken — a single user polyline now reaches
+    // across it (contrast the words=null case, which breaks there).
+    const words = [{ word: 'liaison', start: 0.0, end: 1.0 }];
+    const { container } = render(<PitchChart coordinates={coordinates} words={words} segments={segments} />);
+
+    const frameW = maxDx(container.querySelector('.pitch-line-native'));
+    const userLines = [...container.querySelectorAll('.pitch-line-user, .pitch-line-user-warn')];
+    const reach = Math.max(...userLines.map(maxDx));
+    expect(reach).toBeGreaterThan(3 * frameW); // the 3-frame gap was bridged, not broken
+  });
+
   it('renders word labels when an alignment is provided', () => {
     render(
       <PitchChart

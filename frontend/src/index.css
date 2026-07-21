@@ -1147,9 +1147,24 @@
     height: 4px;
   }
 
+  .pitch-target-band {
+    fill: var(--color-accent-violet);
+    opacity: 0.1;
+    stroke: none;
+  }
+
   .swatch-native { background: var(--color-ink-light); }
   .swatch-user { background: var(--color-accent-violet); }
   .swatch-warn { background: var(--color-accent-warm); }
+
+  /* The band swatch is a filled block, not a line — a stronger tint of the
+     faint on-chart band so it reads at legend size. */
+  .swatch-band {
+    height: 10px;
+    border-radius: 3px;
+    background: var(--color-accent-violet);
+    opacity: 0.25;
+  }
 
   .sr-only {
     position: absolute;
