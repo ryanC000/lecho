@@ -27,8 +27,12 @@ The distributions overlap: gibberish2 (-47.90) beats three genuine takes; gibber
 
 **Corpus assets ready:** `native_audio/gibberish{1..4}.wav` (recorded 2026-07-21) + the six correct-words takes above are the calibration set for the WER threshold.
 
-- [ ] Lightweight STT chosen + installed in a subprocess env (dep pre-checked per the plan's wheel rule; env documented)
-- [ ] `content_gate` recognizes the take's words and rejects on high WER vs the practice transcript (pure WER/decision unit-tested; ASR integration opt-in like the MFA test)
-- [ ] WER threshold graduated on the gibberish-vs-correct set (all six correct takes PASS, all four gibberish FAIL); Decision log updated
-- [ ] Ticket-20 likelihood gate replaced/removed; ~45s/job MFA-in-worker cost retired
-- [ ] End-to-end: a gibberish take is rejected with "we couldn't make out the line" before scoring; a genuine take scores as before
+- [x] Lightweight STT chosen + installed in a subprocess env (dep pre-checked per the plan's wheel rule; env documented) — faster-whisper `base` in a new user-scope `stt` conda env (`conda create -n stt python=3.11`, `pip install faster-whisper`; `ctranslate2` has no cp314 wheel → out of `backend/.venv`, `requirements.txt` untouched). Env + calibration documented in `scripts/README_STT.md`.
+- [x] `content_gate` recognizes the take's words and rejects on high WER vs the practice transcript (pure WER/decision unit-tested; ASR integration opt-in like the MFA test) — `assess` shells `conda run -n stt python stt_runner.py`; `word_error_rate`/`decide`/`normalize_transcript` unit-tested; STT integration opt-in via `RUN_STT_TESTS=1`.
+- [x] WER threshold graduated on the gibberish-vs-correct set (all six correct takes PASS, all four gibberish FAIL); Decision log updated — measured (faster-whisper base): correct WER 0.13–0.60, gibberish 1.00–1.40 (clean [0.60, 1.00] gap); `CONTENT_GATE_MAX_WER = 0.80` → 6/6 correct PASS, 4/4 gibberish FAIL. Decision log entry added (2026-07-28). Whisper hallucination-on-gibberish risk validated benign (invents *different* words, never the target).
+- [x] Ticket-20 likelihood gate replaced/removed; ~45s/job MFA-in-worker cost retired — MFA constants, `parse_analysis_csv`, `_write_wav_16k`, `CONTENT_GATE_MIN_SPEECH_LOGLIK`, the `dsp`/`numpy` imports and the `RUN_MFA_TESTS` test all removed; recognition now ~2–5s/clip.
+- [x] End-to-end: a gibberish take is rejected with "we couldn't make out the line" before scoring; a genuine take scores as before — verified through the real conda-run `assess` path: `gibberish1` → `assessed=True, passed=False` (WER 1.50) → worker `fail_job(REJECT_MESSAGE)`; `napoleon_emulation` → `assessed=True, passed=True` (WER 0.30) → scores. 🧑 A full worker-level job E2E (real gibberish job through `worker_core.run`) is not automated — the worker branch (`assess` → `fail_job`) is unchanged from ticket 20, which was validated E2E.
+
+---
+
+**Status: done — 2026-07-28, commit `c2efeb2`.** STT content gate implemented, calibrated (6/6 correct PASS, 4/4 gibberish FAIL at `CONTENT_GATE_MAX_WER = 0.80`), and wired into the worker; ~45s/job MFA cost retired. faster-whisper `base` quarantined in the `stt` conda env (wheel rule honored). Full backend suite green (52 passed, 1 STT integration skipped by default; 9/9 with `RUN_STT_TESTS=1`).
