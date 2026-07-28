@@ -1,58 +1,49 @@
-"""Content gate: reject unintelligible takes before prosody scoring (ticket 20).
+"""Content gate: reject unintelligible takes before prosody scoring (ticket 22).
 
 The prosody scorer (dsp.py) measures *how* a line was said, never *what* was
 said, so gibberish spoken in rhythm scores like a genuine take (2026-07-13
-owner report; one gibberish take was uncatchable by prosody in principle). The
-defense is a gate, not a graded axis: force-align the practice transcript
-against the user's take with MFA (the same conda-quarantined aligner Task 2.1
-uses offline) and reject when the acoustic fit is too poor to have said the
-line — "we couldn't make out the line" — before any score is computed.
+owner report). The defense is a gate, not a graded axis.
 
-MFA forced alignment always *produces* an alignment (it forces the given words
-onto the audio); the discrimination signal is the per-utterance
-`speech_log_likelihood` MFA writes to `alignment_analysis.csv` when
-`output_analysis` is on. A genuine take of practice 7 measured -47.9; a
-gibberish take (owner records later — ticket 20) sits lower. The rejecting
-threshold `CONTENT_GATE_MIN_SPEECH_LOGLIK` therefore graduates from that
-gibberish-vs-genuine calibration; until then it is None (measure-and-log, never
-reject) so an uncalibrated gate cannot wrongly block real learners.
+Ticket 20 tried MFA *forced* alignment likelihood, but forced alignment maps
+the given words onto the audio no matter what was spoken — its
+`speech_log_likelihood` is the cross-speaker acoustic floor (the ADR 0003 wall),
+not word content, and it could not separate gibberish from genuine takes. This
+gate instead *recognizes the words*: a lightweight local STT (faster-whisper
+`base`, quarantined in the `stt` conda env) transcribes the take, and we reject
+when the word-error rate against the practice transcript is too high — "we
+couldn't make out the line" — before any score is computed. WER separates
+cleanly (gibberish ≈ 100% vs the target; genuine takes low).
 
-This module isolates the conda/MFA subprocess from the numpy-only scoring core:
-`parse_analysis_csv` and `decide` are pure and unit-tested; `assess` runs MFA
-and *fails open* (returns assessed=False) on any infrastructure error, so a
-broken aligner never blocks scoring — only a confident low-likelihood signal
-rejects.
+This module isolates the STT subprocess from the numpy-only scoring core:
+`normalize_transcript`, `word_error_rate` and `decide` are pure and unit-tested;
+`assess` runs the recognizer and *fails open* (returns assessed=False) on any
+infrastructure error, so a broken STT never blocks scoring — only a confidently
+high WER rejects.
 
-Run standalone to calibrate the threshold once a gibberish take exists:
+Run standalone to calibrate the threshold on a take:
     python content_gate.py path/to/take.wav "Hier soir, j'ai vu le film..."
 """
-import csv
-import io
 import re
 import subprocess
-import tempfile
-import wave
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
+# faster-whisper runs in the `stt` conda env (no cp314 wheel → out of the
+# backend venv, per the wheel rule); assess() shells out via `conda run`.
+STT_ENV = "stt"
+_RUNNER = Path(__file__).resolve().parent / "stt_runner.py"
 
-import dsp
+# Max word-error rate (recognized vs practice transcript) still judged
+# intelligible. Graduated on the gibberish-vs-correct calibration set (ticket 22,
+# 2026-07-28, faster-whisper base): six correct takes WER 0.13–0.60, four
+# gibberish takes WER 1.00–1.40 — a clean [0.60, 1.00] gap. 0.80 sits mid-gap,
+# biased high so real accented learners (worse than the low-effort take) aren't
+# wrongly rejected. None here = measure-and-log only (never reject).
+CONTENT_GATE_MAX_WER = 0.80
 
-MFA_ENV = "mfa"
-MFA_ACOUSTIC = "french_mfa"
-MFA_DICTIONARY = "french_mfa"
-
-# Per-utterance speech_log_likelihood below which a take is judged
-# unintelligible. None = measure-and-log only (never reject): the value must be
-# graduated from a gibberish-vs-genuine calibration (ticket 20, owner records
-# the gibberish take), and an uncalibrated float would risk rejecting real
-# learners. Genuine reference point: practice 7 emulation ~= -47.9 (2026-07-21).
-CONTENT_GATE_MIN_SPEECH_LOGLIK = None
-
-# MFA can take ~45s on a single short clip (model load dominates); cap it so a
-# hung aligner fails the gate open instead of wedging the worker.
-MFA_TIMEOUT_S = 180
+# faster-whisper `base` on CPU is ~2-5s/clip; cap so a hung recognizer fails the
+# gate open instead of wedging the worker.
+STT_TIMEOUT_S = 120
 
 # User-facing rejection (retryable — speaking the line clearly can fix it).
 REJECT_MESSAGE = (
@@ -60,9 +51,9 @@ REJECT_MESSAGE = (
     "sentence clearly."
 )
 
-# Spelled-out French digits (MFA's dictionary has no numerals). Mirrors
-# scripts/align_natives.normalize_transcript — the offline native aligner — so
-# the gate normalizes user transcripts exactly as the reference clips were.
+# Spelled-out French digits (the ASR emits words, and the transcript may hold
+# numerals). Mirrors scripts/align_natives.normalize_transcript so both sides of
+# the WER comparison are normalized identically.
 FRENCH_DIGITS = {
     "0": "zéro", "1": "un", "2": "deux", "3": "trois", "4": "quatre",
     "5": "cinq", "6": "six", "7": "sept", "8": "huit", "9": "neuf",
@@ -71,102 +62,84 @@ FRENCH_DIGITS = {
 
 @dataclass
 class ContentGateResult:
-    """assessed=False means the gate could not run (MFA missing/errored) and
+    """assessed=False means the gate could not run (STT missing/errored) and
     scoring should proceed; passed is meaningful only when assessed is True."""
     assessed: bool
     passed: bool
-    speech_log_likelihood: float | None
+    wer: float | None
     detail: str
 
 
 def normalize_transcript(text: str) -> str:
     """Lowercase, curly→straight apostrophes, digits spelled out, punctuation
-    stripped except apostrophes/hyphens; accents preserved (the French
-    dictionary keys on them). Same rules as the offline native aligner."""
+    stripped except apostrophes/hyphens; accents preserved. Same rules as the
+    offline native aligner, applied to both the transcript and the ASR output."""
     text = text.lower().replace("’", "'")
     text = re.sub(r"\d", lambda m: f" {FRENCH_DIGITS[m.group()]} ", text)
     text = "".join(ch if (ch.isalpha() or ch in " '-") else " " for ch in text)
     return " ".join(text.split())
 
 
-def parse_analysis_csv(csv_text: str) -> float | None:
-    """The first utterance's speech_log_likelihood from MFA's
-    alignment_analysis.csv, or None if the column is absent/empty (pure)."""
-    reader = csv.DictReader(io.StringIO(csv_text))
-    for row in reader:
-        value = row.get("speech_log_likelihood")
-        if value not in (None, ""):
-            return float(value)
-    return None
+def word_error_rate(ref: str, hyp: str) -> float:
+    """Word-level Levenshtein distance / reference length (pure).
+
+    Both sides are expected pre-normalized. An empty reference is 0.0 (nothing
+    to get wrong); an empty hypothesis against a real reference is 1.0 (every
+    word deleted → the take said none of the line)."""
+    r, h = ref.split(), hyp.split()
+    if not r:
+        return 0.0
+    # Levenshtein over word tokens, rolling two rows.
+    prev = list(range(len(h) + 1))
+    for i, rw in enumerate(r, 1):
+        curr = [i]
+        for j, hw in enumerate(h, 1):
+            cost = 0 if rw == hw else 1
+            curr.append(min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost))
+        prev = curr
+    return prev[-1] / len(r)
 
 
-def decide(speech_log_likelihood: float | None) -> bool:
+def decide(wer: float | None) -> bool:
     """True = intelligible enough to score. An ungraduated threshold (None) or
-    an unmeasurable likelihood (None) never rejects (pure)."""
-    if CONTENT_GATE_MIN_SPEECH_LOGLIK is None or speech_log_likelihood is None:
+    an unmeasurable WER (None) never rejects (pure)."""
+    if CONTENT_GATE_MAX_WER is None or wer is None:
         return True
-    return speech_log_likelihood >= CONTENT_GATE_MIN_SPEECH_LOGLIK
-
-
-def _write_wav_16k(samples: np.ndarray, path: Path) -> None:
-    """Write mono 16 kHz 16-bit PCM — the clean input MFA aligns reliably."""
-    pcm = np.clip(samples, -1.0, 1.0)
-    pcm = (pcm * 32767).astype("<i2")
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(dsp.TARGET_SR)
-        wf.writeframes(pcm.tobytes())
+    return wer <= CONTENT_GATE_MAX_WER
 
 
 def assess(user_wav_path, transcript: str) -> ContentGateResult:
-    """Force-align `transcript` against the take and judge intelligibility.
+    """Recognize the take's words and judge intelligibility by WER.
 
-    Fails open (assessed=False) on any MFA infrastructure failure — a missing
-    conda env, a subprocess error, a timeout, no analysis CSV — so a broken
-    aligner degrades to "score anyway", never to "block every practice".
+    Fails open (assessed=False) on any STT infrastructure failure — a missing
+    conda env, a subprocess error, a timeout, a non-zero exit — so a broken
+    recognizer degrades to "score anyway", never to "block every practice". A
+    successful recognition that yields *no* words is not an infra failure: it
+    means the line wasn't spoken, so WER is 1.0 and the take is rejected.
     """
-    snd = dsp.load_mono_16k(user_wav_path)
-    normalized = normalize_transcript(transcript)
-    if not normalized:
+    ref = normalize_transcript(transcript)
+    if not ref:
         return ContentGateResult(False, True, None, "empty transcript")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        corpus, out = tmp / "corpus", tmp / "out"
-        corpus.mkdir()
-        _write_wav_16k(snd.values[0], corpus / "utt.wav")
-        (corpus / "utt.txt").write_text(normalized, encoding="utf-8")
-        # output_analysis has no CLI flag; enable it through a config file
-        # (MFA merges arbitrary yaml keys into the aligner constructor).
-        cfg = tmp / "cfg.yaml"
-        cfg.write_text("output_analysis: true\n", encoding="utf-8")
+    try:
+        proc = subprocess.run(
+            ["conda", "run", "-n", STT_ENV, "python", str(_RUNNER),
+             str(user_wav_path)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=STT_TIMEOUT_S,
+            # Force UTF-8 so conda-run's echo can't crash on non-ASCII output.
+            env=_utf8_env(),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ContentGateResult(False, True, None, f"STT did not run: {exc}")
+    if proc.returncode != 0:
+        return ContentGateResult(False, True, None, "STT recognition failed")
 
-        try:
-            proc = subprocess.run(
-                ["conda", "run", "-n", MFA_ENV, "mfa", "align",
-                 "--config_path", str(cfg), "--single_speaker", "--clean",
-                 str(corpus), MFA_DICTIONARY, MFA_ACOUSTIC, str(out)],
-                capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=MFA_TIMEOUT_S,
-                # Force UTF-8 so conda-run's echo can't crash on non-ASCII.
-                env=_utf8_env(),
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            return ContentGateResult(False, True, None, f"MFA did not run: {exc}")
-        if proc.returncode != 0:
-            return ContentGateResult(False, True, None, "MFA alignment failed")
-
-        analysis = out / "alignment_analysis.csv"
-        if not analysis.exists():
-            return ContentGateResult(False, True, None, "no analysis output")
-        likelihood = parse_analysis_csv(analysis.read_text(encoding="utf-8"))
-
-    if likelihood is None:
-        return ContentGateResult(False, True, None, "no likelihood in analysis")
-    passed = decide(likelihood)
-    return ContentGateResult(True, passed, likelihood,
-                             "intelligible" if passed else "below threshold")
+    hyp = normalize_transcript(proc.stdout)
+    wer = word_error_rate(ref, hyp)
+    passed = decide(wer)
+    return ContentGateResult(True, passed, wer,
+                             "intelligible" if passed else "above WER threshold")
 
 
 def _utf8_env() -> dict:
@@ -178,14 +151,14 @@ def _utf8_env() -> dict:
 def _main() -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Measure a take's MFA content-gate likelihood.")
+    parser = argparse.ArgumentParser(description="Measure a take's content-gate WER.")
     parser.add_argument("wav", type=Path)
     parser.add_argument("transcript")
     args = parser.parse_args()
     result = assess(args.wav, args.transcript)
     print(f"assessed={result.assessed} passed={result.passed} "
-          f"speech_log_likelihood={result.speech_log_likelihood} ({result.detail})")
-    print(f"(reject threshold CONTENT_GATE_MIN_SPEECH_LOGLIK = {CONTENT_GATE_MIN_SPEECH_LOGLIK})")
+          f"wer={result.wer} ({result.detail})")
+    print(f"(reject threshold CONTENT_GATE_MAX_WER = {CONTENT_GATE_MAX_WER})")
     return 0
 
 

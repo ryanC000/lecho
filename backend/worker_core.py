@@ -99,11 +99,10 @@ def run(job_id: str, session_factory):
                 )
                 if peak_ncc > dsp.NCC_BLEED_THRESHOLD:
                     raise dsp.BleedDetectedError(BLEED_MESSAGE)
-            # Content gate (ticket 20): force-align the practice transcript
-            # against the take and reject unintelligible ones before scoring —
-            # prosody alone can't tell gibberish from a genuine take. Fails
-            # open (a broken MFA env scores anyway); only a confident
-            # low-likelihood signal rejects.
+            # Content gate (ticket 22): recognize the take's words (STT) and
+            # reject unintelligible ones before scoring — prosody alone can't
+            # tell gibberish from a genuine take. Fails open (a broken STT env
+            # scores anyway); only a confidently high word-error rate rejects.
             transcript = job.practice.transcript if job.practice else None
             if transcript:
                 gate = content_gate.assess(user_path, transcript)

@@ -1,8 +1,8 @@
-"""Content-gate tests (ticket 20).
+"""Content-gate tests (ticket 22).
 
-The MFA subprocess is integration-only (needs the conda env; ~45s), so it is
-opt-in via RUN_MFA_TESTS. The gate's decision logic and MFA-output parsing are
-pure functions and covered here directly.
+The STT subprocess is integration-only (needs the `stt` conda env; downloads a
+model on first run), so it is opt-in via RUN_STT_TESTS. The gate's WER metric
+and decision logic are pure functions and covered here directly.
 """
 import os
 
@@ -10,38 +10,41 @@ import pytest
 
 import content_gate
 
-# Real speech_log_likelihood measured on practice 7's genuine emulation take
-# (2026-07-21) — the "accept" reference the reject threshold graduates against.
-GENUINE_ANALYSIS_CSV = (
-    "file,begin,end,speaker,overall_log_likelihood,speech_log_likelihood,"
-    "phone_duration_deviation,max_running_short_interval,snr,intensity_deviation\n"
-    "utt,0.0,5.18,corpus,-44.64,-47.85,18.08,0,12.76,\n"
-)
+
+def test_word_error_rate_identical_is_zero():
+    assert content_gate.word_error_rate("hier soir j'ai vu le film", "hier soir j'ai vu le film") == 0.0
 
 
-def test_parse_analysis_csv_reads_speech_log_likelihood():
-    assert content_gate.parse_analysis_csv(GENUINE_ANALYSIS_CSV) == pytest.approx(-47.85)
+def test_word_error_rate_disjoint_is_one():
+    # Every reference word substituted → distance == reference length → 1.0.
+    assert content_gate.word_error_rate("un deux trois", "sept huit neuf") == pytest.approx(1.0)
 
 
-def test_parse_analysis_csv_missing_value_is_none():
-    header = (
-        "file,begin,end,speaker,overall_log_likelihood,speech_log_likelihood,"
-        "phone_duration_deviation,max_running_short_interval,snr,intensity_deviation\n"
-    )
-    assert content_gate.parse_analysis_csv(header) is None            # header only
-    assert content_gate.parse_analysis_csv(header + "utt,0,1,corpus,-1,,0,0,1,\n") is None
+def test_word_error_rate_empty_hypothesis_is_one():
+    # No words recognized against a real line: all deletions → 1.0 (rejects).
+    assert content_gate.word_error_rate("un deux trois quatre", "") == pytest.approx(1.0)
+
+
+def test_word_error_rate_empty_reference_is_zero():
+    assert content_gate.word_error_rate("", "quelque chose") == 0.0
+
+
+def test_word_error_rate_partial_errors():
+    # One substitution out of four words → 0.25.
+    assert content_gate.word_error_rate("un deux trois quatre", "un deux trois cinq") == pytest.approx(0.25)
 
 
 def test_decide_ungraduated_threshold_never_rejects(monkeypatch):
-    monkeypatch.setattr(content_gate, "CONTENT_GATE_MIN_SPEECH_LOGLIK", None)
-    assert content_gate.decide(-999.0) is True  # measure-and-log mode
+    monkeypatch.setattr(content_gate, "CONTENT_GATE_MAX_WER", None)
+    assert content_gate.decide(0.99) is True  # measure-and-log mode
 
 
-def test_decide_rejects_below_and_passes_above(monkeypatch):
-    monkeypatch.setattr(content_gate, "CONTENT_GATE_MIN_SPEECH_LOGLIK", -60.0)
-    assert content_gate.decide(-47.85) is True   # genuine take clears the bar
-    assert content_gate.decide(-75.0) is False   # gibberish sits below it
-    assert content_gate.decide(None) is True     # unmeasurable never rejects
+def test_decide_rejects_above_and_passes_below(monkeypatch):
+    monkeypatch.setattr(content_gate, "CONTENT_GATE_MAX_WER", 0.50)
+    assert content_gate.decide(0.25) is True   # genuine take clears the bar
+    assert content_gate.decide(0.90) is False  # gibberish sits above it
+    assert content_gate.decide(0.50) is True   # boundary is inclusive
+    assert content_gate.decide(None) is True   # unmeasurable never rejects
 
 
 def test_normalize_transcript_matches_offline_aligner_rules():
@@ -52,8 +55,8 @@ def test_normalize_transcript_matches_offline_aligner_rules():
 
 
 @pytest.mark.skipif(
-    os.environ.get("RUN_MFA_TESTS") != "1",
-    reason="MFA integration (conda env, ~45s); set RUN_MFA_TESTS=1 to run",
+    os.environ.get("RUN_STT_TESTS") != "1",
+    reason="STT integration (conda env, model download); set RUN_STT_TESTS=1 to run",
 )
 def test_assess_genuine_take_is_intelligible():
     from pathlib import Path
@@ -61,4 +64,4 @@ def test_assess_genuine_take_is_intelligible():
     wav = Path(__file__).resolve().parent.parent / "native_audio" / "napoleon_emulation.wav"
     result = content_gate.assess(wav, "Hier soir, j'ai vu le film Napoléon de Ridley Scott.")
     assert result.assessed and result.passed
-    assert result.speech_log_likelihood is not None
+    assert result.wer is not None and result.wer < 0.5
