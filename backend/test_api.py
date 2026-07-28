@@ -124,6 +124,27 @@ def test_lifecycle_solo_job_scores_near_100(client):
     assert body["mode"] == "solo"  # mode omitted on POST → solo (backward compatible)
 
 
+def test_content_axis_blends_into_overall(client, monkeypatch):
+    # Override the autouse stub: the gate recognized the words at WER 0.2, which
+    # maps to a content sub-score of 80 and must blend into the overall.
+    import content_gate, dsp
+
+    monkeypatch.setattr(
+        content_gate, "assess",
+        lambda *a, **k: content_gate.ContentGateResult(True, True, 0.2, "stub wer"),
+    )
+    headers = _auth_headers(client)
+    job_id = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S).json()["id"]
+    body = client.get(f"/jobs/{job_id}", headers=headers).json()
+
+    assert body["status"] == "SUCCESS", body["error_message"]
+    assert body["content_score"] == 80.0
+    prosody = (dsp.PITCH_WEIGHT * body["pitch_score"]
+               + dsp.TIMING_WEIGHT * body["timing_score"]
+               + dsp.ENERGY_WEIGHT * body["energy_score"])
+    assert body["score"] == pytest.approx(dsp.blend_content(prosody, 80.0), abs=0.2)
+
+
 def test_job_requires_auth(client):
     r = _post_job(client, {}, client.native_wav.read_bytes(), NATIVE_DURATION_S)
     assert r.status_code == 401

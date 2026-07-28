@@ -39,6 +39,7 @@ describe('Results polling', () => {
           pitch_score: 91.0,
           timing_score: 84.0,
           energy_score: 87.5,
+          content_score: 76.0,
           practice_id: 7,
           transcript: 'bonjour tout le monde',
           segments: [
@@ -77,6 +78,7 @@ describe('Results polling', () => {
     expect(screen.getByText('tout le')).toBeInTheDocument();
     expect(screen.getByText('Your pitch fell where the native rises.')).toBeInTheDocument();
     expect(screen.getByText('Pitch')).toBeInTheDocument(); // sub-score row
+    expect(screen.getByText('Content')).toBeInTheDocument(); // STT pronunciation axis
 
     // Terminal state clears the interval — no further polls.
     const calls = apiFetch.mock.calls.length;

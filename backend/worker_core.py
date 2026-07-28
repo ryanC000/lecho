@@ -103,16 +103,21 @@ def run(job_id: str, session_factory):
             # reject unintelligible ones before scoring — prosody alone can't
             # tell gibberish from a genuine take. Fails open (a broken STT env
             # scores anyway); only a confidently high word-error rate rejects.
+            content_score = None
             transcript = job.practice.transcript if job.practice else None
             if transcript:
                 gate = content_gate.assess(user_path, transcript)
                 if gate.assessed and not gate.passed:
                     fail_job(db, job, content_gate.REJECT_MESSAGE)
                     return
+                # The gate already measured the take's words; reuse that WER as a
+                # pronunciation axis (None if the STT couldn't run — fails open).
+                content_score = dsp.content_score_from_wer(gate.wer)
             native_feat = dsp.features_for(native_path)
             user_feat = dsp.features_for(user_path)
             aligned = dsp.align(native_feat, user_feat)
-            overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
+            prosody_overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
+            overall = dsp.blend_content(prosody_overall, content_score)
             segments = dsp.make_segments(aligned)
             archive = dsp.build_archive(aligned)
         except dsp.DspError as exc:
@@ -149,6 +154,7 @@ def run(job_id: str, session_factory):
         job.pitch_score = round(pitch_score, 1)
         job.timing_score = round(timing_score, 1)
         job.energy_score = round(energy_score, 1)
+        job.content_score = round(content_score, 1) if content_score is not None else None
         job.algo_version = ALGO_VERSION
         db.commit()
     except Exception as exc:  # never let a background failure vanish silently

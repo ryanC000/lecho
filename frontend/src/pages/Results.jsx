@@ -130,6 +130,7 @@ export default function Results() {
             ['Pitch', job.pitch_score],
             ['Timing', job.timing_score],
             ['Energy', job.energy_score],
+            ...(job.content_score != null ? [['Content', job.content_score]] : []),
           ].map(([label, value]) => (
             <div key={label} className="sub-score">
               <span className="sub-score-value">{value}</span>

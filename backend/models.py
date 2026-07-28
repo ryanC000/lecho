@@ -52,6 +52,7 @@ class ProsodyJob(Base):
     pitch_score = Column(Float, nullable=True)      # per-axis sub-scores (dsp-2); null for pre-dsp-2 rows
     timing_score = Column(Float, nullable=True)
     energy_score = Column(Float, nullable=True)
+    content_score = Column(Float, nullable=True)    # STT pronunciation axis; null when no transcript / STT unavailable
     error_message = Column(String, nullable=True)   # why a job FAILED (today failures vanish silently)
     algo_version = Column(String, nullable=True)     # which DSP version produced the score (KPI comparability)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

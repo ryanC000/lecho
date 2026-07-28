@@ -242,6 +242,7 @@ def get_job_status(job_id: str, db: Session = Depends(database.get_db), current_
         "pitch_score": job.pitch_score,
         "timing_score": job.timing_score,
         "energy_score": job.energy_score,
+        "content_score": job.content_score,
         "error_message": job.error_message,
         "practice_id": job.practice_id,
         "transcript": job.practice.transcript if job.practice else None,

@@ -31,10 +31,21 @@ RMS_WINDOW_S = 0.025        # ~25ms RMS window, centered on each F0 frame time
 # Graduated 2026-07-13 (ADR 0003, calibrate.py --tune on the full corpus):
 # timing-led because the content is flat-pitch French — rhythm, not melody,
 # carries the discrimination signal there (pitch RMSE actively rewards
-# flatness against a flat reference, so it cannot lead).
+# flatness against a flat reference, so it cannot lead). These three weight the
+# PROSODY sub-score (they sum to 1.0); content blends in on top at CONTENT_WEIGHT.
 PITCH_WEIGHT = 0.20
 TIMING_WEIGHT = 0.60
 ENERGY_WEIGHT = 0.20
+
+# Content axis (2026-07-28): a pronunciation/intelligibility score from the STT
+# gate's word-error rate against the practice transcript. It measures *what* was
+# said (did you pronounce the line clearly?), orthogonal to the prosody axes'
+# *how*. Blended on top of the prosody sub-score: overall = (1-CW)*prosody +
+# CW*content. Placeholder weight — WER is a blunt, noisy signal (good at catching
+# mumbled/wrong-word takes, poor at fine grading), so it earns a modest share
+# until graduated on a larger set. When the STT gate can't run (no transcript /
+# infra failure) content is None and the overall is prosody-only.
+CONTENT_WEIGHT = 0.15
 
 DTW_ENERGY_LAMBDA = 1.0     # weight of |Δrms_z| in the joint DTW frame cost (PRD 8.6.3)
 # Path regularization (dsp-2). Without it the timing score is unusable:
@@ -562,6 +573,28 @@ def score(aligned: Aligned) -> tuple:
     )
 
     return float(overall), float(pitch_score), float(timing_score), float(energy_score)
+
+
+def content_score_from_wer(wer: float | None) -> float | None:
+    """Map the STT gate's word-error rate to a 0-100 pronunciation score (pure).
+
+    100 = the recognizer heard the target line exactly; it falls linearly to 0 at
+    WER >= 1.0 (nothing of the line recognized). None (no transcript / STT could
+    not run) stays None so the overall falls back to prosody-only."""
+    if wer is None:
+        return None
+    return 100.0 * (1.0 - min(max(wer, 0.0), 1.0))
+
+
+def blend_content(prosody_overall: float, content_score: float | None) -> float:
+    """Fold the content axis into the overall at CONTENT_WEIGHT (pure).
+
+    overall = (1 - CONTENT_WEIGHT)*prosody + CONTENT_WEIGHT*content. A missing
+    content score (STT unavailable) leaves the overall as the prosody score, so
+    the content axis never penalizes a take it couldn't measure."""
+    if content_score is None:
+        return prosody_overall
+    return (1.0 - CONTENT_WEIGHT) * prosody_overall + CONTENT_WEIGHT * content_score
 
 
 def _rmse(a: np.ndarray, b: np.ndarray) -> float:

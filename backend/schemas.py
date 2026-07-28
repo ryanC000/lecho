@@ -69,6 +69,7 @@ class JobStatusResponse(BaseModel):
     pitch_score: Optional[float] = None
     timing_score: Optional[float] = None
     energy_score: Optional[float] = None
+    content_score: Optional[float] = None
     error_message: Optional[str] = None
     practice_id: Optional[int] = None
     transcript: Optional[str] = None

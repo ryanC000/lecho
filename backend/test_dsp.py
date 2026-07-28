@@ -184,3 +184,26 @@ def test_make_segments_and_archive_shapes(tmp_path):
     assert len(archive["user_f0_hz_aligned"]) == n
     assert len(archive["voiced_masks"]["native"]) == n
     assert len(archive["voiced_masks"]["user_aligned"]) == n
+
+
+# --- Content axis (STT pronunciation score, 2026-07-28) ------------------
+
+def test_content_score_from_wer_maps_wer_to_0_100():
+    assert dsp.content_score_from_wer(0.0) == 100.0     # exact recognition
+    assert dsp.content_score_from_wer(1.0) == 0.0       # nothing recognized
+    assert dsp.content_score_from_wer(0.3) == pytest.approx(70.0)
+
+
+def test_content_score_from_wer_clamps_and_passes_none():
+    assert dsp.content_score_from_wer(1.5) == 0.0       # WER > 1 (insertions) clamps to 0
+    assert dsp.content_score_from_wer(-0.1) == 100.0    # defensive lower clamp
+    assert dsp.content_score_from_wer(None) is None     # STT unavailable → no axis
+
+
+def test_blend_content_folds_axis_at_content_weight():
+    cw = dsp.CONTENT_WEIGHT
+    assert dsp.blend_content(80.0, 40.0) == pytest.approx((1 - cw) * 80.0 + cw * 40.0)
+
+
+def test_blend_content_none_is_prosody_only():
+    assert dsp.blend_content(72.5, None) == 72.5        # fails open: no content penalty

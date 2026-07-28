@@ -12,6 +12,7 @@ MIGRATIONS = [
     ("prosody_jobs", "pitch_score", "FLOAT"),
     ("prosody_jobs", "timing_score", "FLOAT"),
     ("prosody_jobs", "energy_score", "FLOAT"),
+    ("prosody_jobs", "content_score", "FLOAT"),
     # DEFAULT so pre-shadow rows read as solo (they were).
     ("prosody_jobs", "mode", "TEXT NOT NULL DEFAULT 'solo'"),
     # Word-anchored feedback (PRD 8.4): JSON list of the segment's words, nullable.
