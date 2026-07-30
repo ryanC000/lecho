@@ -1,7 +1,7 @@
 # Phase 3 — Productionization
 
-The seams the codebase already built for this ("Phase 3" in `storage.py`, `worker_core.py`,
-`migrations.py`) get their real backends: managed Postgres, S3, an SQS-driven worker container,
+The seams the codebase already built for this ("Phase 3" in `infra/storage.py`, `worker/core.py`,
+`infra/migrations.py`) get their real backends: managed Postgres, S3, an SQS-driven worker container,
 Docker images, and Terraform to provision it all. This is the work that makes the deployed
 architecture match the intended one — the same swap the seams were designed for, not a rewrite.
 

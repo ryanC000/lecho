@@ -30,7 +30,7 @@ The backend is built with FastAPI and runs on Python 3.10+.
     ```
 4.  Run the development server using Uvicorn:
     ```bash
-    uvicorn main:app --reload
+    uvicorn api.main:app --reload
     ```
     *   The API server will run at: `http://127.0.0.1:8000`
     *   Interactive API docs can be viewed at: `http://127.0.0.1:8000/docs`
@@ -57,15 +57,34 @@ The frontend is built using React, Vite, and CSS. It requires Node.js (v18+ reco
 
 ---
 
-### 3. Background Worker Run (Optional)
+### 3. Backend layout
 
-The backend runs a simulation worker internally, but you can also execute a standalone worker test run:
+The backend is organized by role; `backend/` is the import root, so all commands
+below run from `backend/` with the venv python.
 
-1.  Navigate to the worker directory:
-    ```bash
-    cd worker
-    ```
-2.  Execute the worker processor test script **[worker/main.py]**:
-    ```bash
-    python main.py
-    ```
+| Folder | Contents |
+| --- | --- |
+| `api/` | FastAPI app, routers, request/response schemas, auth dependencies |
+| `domain/` | Pure logic: the `dsp/` scoring package, content gate, job gates |
+| `ingest/` | Bytes in → stored, validated, catalogued `AudioAsset` |
+| `infra/` | SQLAlchemy models, engine/session, migrations, the storage seam |
+| `worker/` | Transport-independent scoring orchestrator (`worker.core.run`) |
+| `tools/` | Offline CLIs (seed, calibrate, native ingest, alignment) |
+| `tests/` | Pytest suite — `pytest` from `backend/` |
+
+Dependencies point one way: `api → domain, ingest, infra, worker`, `worker →
+domain, infra`, `ingest → infra`, and `domain` imports nothing internal.
+
+The scoring worker runs in-process via FastAPI `BackgroundTasks` today; Phase 3
+swaps that dispatch for SQS without touching `worker.core.run`.
+
+### 4. Offline tools
+
+Run as modules so `backend/` stays the import root:
+
+```bash
+python -m tools.seed                     # reset + seed the dev database (destructive)
+python -m tools.ingest_native <file.wav> --practice-id 3   # add a native reference clip
+python -m tools.calibrate --smoke        # scoring harness on synthetic audio
+python -m tools.align_natives            # word alignments (needs the `mfa` conda env)
+```

@@ -3,13 +3,13 @@
 **What to build:** The app runs on PostgreSQL in deployment while staying on SQLite for local
 dev, selected purely by a `DATABASE_URL` env var (defaulting to the current `sqlite:///./lecho.db`
 so dev and the test suite are unchanged). The SQLite-only `connect_args={"check_same_thread": False}`
-in [database.py](../../../backend/database.py) and [seed.py](../../../backend/seed.py) becomes
+in [database.py](../../../backend/infra/database.py) and [seed.py](../../../backend/tools/seed.py) becomes
 conditional on the URL scheme. The startup migrations in
-[migrations.py](../../../backend/migrations.py) are SQLite-specific — they introspect via
+[migrations.py](../../../backend/infra/migrations.py) are SQLite-specific — they introspect via
 `PRAGMA table_info` and emit bare `ALTER TABLE ADD COLUMN` — so the add-and-backfill mechanism gets
 a Postgres path (information_schema lookup, or adopt Alembic as the docstring's "no Alembic until
 Phase 3" anticipated — pick the lighter option and record it). Verify the ORM types in
-[models.py](../../../backend/models.py) map cleanly to Postgres (TEXT/FLOAT are fine; check any
+[models.py](../../../backend/infra/models.py) map cleanly to Postgres (TEXT/FLOAT are fine; check any
 booleans/defaults).
 
 **Precondition:** `psycopg` (v3) must install as a prebuilt cp314 wheel (`--only-binary :all:`) —

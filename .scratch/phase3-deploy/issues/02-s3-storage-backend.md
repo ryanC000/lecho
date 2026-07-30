@@ -1,6 +1,6 @@
 # 02 — S3 storage backend
 
-**What to build:** Implement the `BACKEND_S3` path that [storage.py](../../../backend/storage.py)
+**What to build:** Implement the `BACKEND_S3` path that [storage.py](../../../backend/infra/storage.py)
 was designed around — every method already documents its S3 equivalent in a comment, so this is the
 one-file swap the seam promised, not a route change. A `STORAGE_BACKEND` env var (`LOCAL` default)
 selects it; bucket, region, and credentials come from env. Per method: `save_upload`/`save_text`

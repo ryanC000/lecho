@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { blobToWav } from '../utils/audio';
 import LiveWaveform from './LiveWaveform';
 
-// Client mirror of the server's per-mode duration gates (backend main.py).
+// Client mirror of the server's per-mode duration gates (backend domain/job_gates.py).
 const SOLO_TOLERANCE_FRAC = 0.5;
 const SHADOW_TAIL_S = 1.0;
 const SHADOW_TOLERANCE_S = 0.5;

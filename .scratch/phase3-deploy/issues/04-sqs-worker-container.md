@@ -1,10 +1,10 @@
 # 04 — SQS queue and standalone worker container
 
 **What to build:** The scoring job crosses a real queue instead of an in-process background task.
-The upload route in [main.py](../../../backend/main.py) currently ends with
-`background_tasks.add_task(worker_core.run, ...)` — replace that dispatch with publishing the
-`job_id` to an SQS queue. A new worker entrypoint (`backend/worker_main.py`) long-polls the queue
-and calls the existing `worker_core.run(job_id, database.SessionLocal)` per message — `run` was
+The upload route in [main.py](../../../backend/api/main.py) currently ends with
+`background_tasks.add_task(worker_core.run, ...)` (`worker.core`) — replace that dispatch with publishing the
+`job_id` to an SQS queue. A new worker entrypoint (`backend/worker/main.py`) long-polls the queue
+and calls the existing `worker.core.run(job_id, database.SessionLocal)` per message — `run` was
 built as the transport-independent seam ("the Phase 3 SQS entrypoint imports the same function — a
 transport swap, not a rewrite"), so no scoring logic moves. On success the message is deleted; on an
 unexpected exception it goes to a dead-letter queue after N receives (the existing `fail_job` path
@@ -21,7 +21,7 @@ local-disk worker container would fail to find the uploaded clip.
 **Status:** blocked
 
 - [ ] Upload publishes `job_id` to SQS; route returns without running DSP inline
-- [ ] Standalone worker polls SQS and scores via unchanged `worker_core.run`
+- [ ] Standalone worker polls SQS and scores via unchanged `worker.core.run`
 - [ ] Poison messages land in a DLQ after the retry limit; row shows the failure
 - [ ] `QUEUE_BACKEND=INLINE` preserves the synchronous path; full suite green under it
 - [ ] `docker compose up` runs app + worker as separate services scoring a real job
