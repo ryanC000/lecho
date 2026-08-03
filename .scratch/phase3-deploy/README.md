@@ -2,7 +2,7 @@
 
 The seams the codebase already built for this ("Phase 3" in `infra/storage.py`, `worker/core.py`,
 `infra/migrations.py`) get their real backends: managed Postgres, S3, an SQS-driven worker container,
-Docker images, and Terraform to provision it all. This is the work that makes the deployed
+Docker images, and a Kubernetes deployment to run it all. This is the work that makes the deployed
 architecture match the intended one — the same swap the seams were designed for, not a rewrite.
 
 Ambient-noise cleanup (SciPy) is **not** here — it already lives as master-plan ticket
@@ -15,16 +15,21 @@ worker split (04)** — once the worker is its own container it no longer shares
 disk, so audio must live in shared object storage first.
 
 ```
-01 postgres ─┐
-02 s3 ───────┼─→ 03 docker ─→ 04 sqs-worker ─→ 05 terraform
-             └──────────────────────────────────┘
+01 postgres ✅ ─┐
+02 s3       ✅ ─┼─→ 03 docker ─→ 04 sqs-worker ─→ 05 kubernetes
+                └──────────────────────────────────┘
 ```
 
-1. **01 — PostgreSQL** → verify: suite green against Postgres; SQLite still works for dev
-2. **02 — S3 storage backend** → verify: `BACKEND_S3` round-trips audio; routes unchanged
+1. **01 — PostgreSQL** → verify: suite green against Postgres; SQLite still works for dev — **done**
+2. **02 — S3 storage backend** → verify: `BACKEND_S3` round-trips audio; routes unchanged — **done**
 3. **03 — Docker** → verify: `docker compose up` boots app + Postgres locally
 4. **04 — SQS + worker container** → verify: job published to SQS, scored by a separate worker
-5. **05 — Terraform** → verify: `terraform apply` provisions the stack from clean
+5. **05 — Kubernetes** → verify: worker pod scores a job uploaded through the Ingress; worker
+   scales independently of the API
+
+Ticket 05 was **Terraform/ECS Fargate**; it is now Kubernetes. Container hosting moves to k8s
+(local `kind`/`k3s` against real AWS S3 + SQS), and full infrastructure-as-code is deferred — it
+gates nothing else in this phase.
 
 ## Status legend
 `ready-for-agent` · `blocked` · `needs-info` · `in-progress` · `done` (matches master-plan)
