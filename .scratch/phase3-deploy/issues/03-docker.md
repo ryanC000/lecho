@@ -21,11 +21,12 @@ wheels inside the image's base Python — verify at build time by importing them
 - The **Python 3.14 risk in earlier drafts of this ticket no longer applies**: the project venv is
   **3.12.4**, and psycopg, boto3, and scipy all resolved as prebuilt cp312 wheels. Pin the base
   image to 3.12 to match; record it if you deviate.
-- **Master-plan ticket 17 (SciPy noise pipeline) is in flight and adds to `requirements.txt`.**
-  The image installs that file, so the build-time import check must cover whatever 17 lands —
-  `scipy` at minimum. If 17 chose `noisereduce`, note that it pulls **matplotlib, Pillow, fonttools,
-  kiwisolver and contourpy** (~50–60 MB) into a headless worker image; consider whether the image
-  needs them at all. Check `requirements.txt` before building rather than assuming this list.
+- **Master-plan ticket 17 (ambient-noise pipeline) has landed** (`a449200`) and added `scipy` and
+  `noisereduce` to `requirements.txt`. The build-time import check must cover both. Note that
+  `noisereduce` pulls **matplotlib, Pillow, fonttools, kiwisolver and contourpy** — roughly
+  50–60 MB of plotting stack into a headless worker image that will never render a chart. Worth a
+  multi-stage build, or revisiting whether the ~30 lines of `scipy.signal` spectral subtraction
+  would let the dependency go.
 - **If an ARM cluster is a candidate** (Oracle's free tier is ARM64 — see 05), also run
   `docker build --platform linux/arm64` once and confirm parselmouth resolves. numpy and scipy
   publish ARM wheels reliably; parselmouth is the one that could force an x86-only host.
