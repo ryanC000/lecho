@@ -10,3 +10,4 @@ praat-parselmouth  # F0 pitch tracking + load/resample/mono (worker_plan.md Part
 numpy               # RMS energy + hand-rolled DTW alignment
 pytest              # dev: test harness (test_dsp.py)
 httpx2              # dev: FastAPI TestClient transport (starlette 1.x requires the httpx2 distribution, not httpx)
+psycopg[binary]     # PostgreSQL driver for the deployed DATABASE_URL (SQLite needs no driver)

@@ -35,9 +35,15 @@ def _skip_content_gate(monkeypatch):
 def client(tmp_path, monkeypatch):
     """TestClient on a temp DB + temp storage root, with one seeded practice
     whose native reference is a synthetic 120→180Hz chirp."""
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False}
-    )
+    if database.SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False}
+        )
+    else:
+        # DATABASE_URL points at a server (Postgres): there is no per-test file to
+        # throw away, so drop the schema instead to keep each test hermetic.
+        engine = create_engine(database.SQLALCHEMY_DATABASE_URL)
+        models.Base.metadata.drop_all(bind=engine)
     TestingSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     monkeypatch.setattr(database, "engine", engine)
     monkeypatch.setattr(database, "SessionLocal", TestingSession)
