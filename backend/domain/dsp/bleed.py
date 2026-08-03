@@ -13,7 +13,7 @@ def detect_bleed(native_samples: np.ndarray, user_samples: np.ndarray, sr: float
     or after the start of a shadow recording). The orchestrator compares the
     returned peak against NCC_BLEED_THRESHOLD.
 
-    Numpy only (scipy is not a dependency): cross-correlation via FFT, then
+    Numpy only: cross-correlation via FFT, then
     each lag's correlation normalized by the L2 norms of the two overlapping
     windows, computed from cumulative sums of squares — O(n log n) total.
     The peak is taken on |NCC| so polarity-inverted playback still registers.

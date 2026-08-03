@@ -27,9 +27,16 @@ disk, so audio must live in shared object storage first.
 5. **05 — Kubernetes** → verify: worker pod scores a job uploaded through the Ingress; worker
    scales independently of the API
 
+6. **06 — align_natives.py DATABASE_URL** → verify: respects the env var like every other entry
+   point. Independent of 03–05; can be picked up any time.
+
 Ticket 05 was **Terraform/ECS Fargate**; it is now Kubernetes. Container hosting moves to k8s
 (local `kind`/`k3s` against real AWS S3 + SQS), and full infrastructure-as-code is deferred — it
 gates nothing else in this phase.
+
+**Cross-phase dependency:** master-plan ticket 15 (env-config) gates any *frontend* deployment —
+`API_BASE` and the CORS origins are hardcoded to localhost, and Vite bakes them in at build time.
+Nothing in 03–05 needs it, but the deployed app is not reachable from a browser without it.
 
 ## Status legend
 `ready-for-agent` · `blocked` · `needs-info` · `in-progress` · `done` (matches master-plan)

@@ -309,9 +309,14 @@ def test_aligned_job_attaches_overlapping_words(client, tmp_path):
 
 # --- Ambient-noise pipeline (master-plan ticket 17) --------------------------
 
-def _write_noisy_take(path, noise_amp, sr=16000, seed=0):
-    """A realistic noisy take: the native chirp, preceded by NOISE_PROFILE_S of
-    ambient-only lead-in, with white noise running throughout."""
+def _write_noisy_take(path, noise_amp, sr=16000, seed=0, ambient_lead_in=True):
+    """A noisy take: the native chirp with white noise running throughout.
+
+    `ambient_lead_in` picks which branch of the SNR gate the worker takes — True
+    leaves NOISE_PROFILE_S of ambient-only lead-in (a credible noise profile, so
+    reduction runs), False starts the chirp at sample zero (the profile is
+    speech, so reduction is skipped and only the bandpass applies).
+    """
     import numpy as np
 
     from domain.dsp import noise
@@ -320,7 +325,8 @@ def _write_noisy_take(path, noise_amp, sr=16000, seed=0):
     t = np.arange(n) / sr
     phase = 2 * np.pi * (120.0 * t + (180.0 - 120.0) / (2 * NATIVE_DURATION_S) * t ** 2)
     samples = 0.5 * np.sin(phase)
-    samples[: int(noise.NOISE_PROFILE_S * sr)] = 0.0  # ambient only during the lead-in
+    if ambient_lead_in:
+        samples[: int(noise.NOISE_PROFILE_S * sr)] = 0.0
     samples += np.random.default_rng(seed).normal(0, noise_amp, n)
 
     with wave.open(str(path), "wb") as w:
@@ -341,6 +347,47 @@ def test_noisy_recording_scores_without_a_hard_failure(client, tmp_path):
     body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
     assert body["status"] == "SUCCESS", body["error_message"]
     assert body["score"] is not None
+
+
+def test_noisy_take_that_starts_mid_speech_still_scores(client, tmp_path):
+    # The motivating case for the SNR gate: no ambient lead-in, so the first
+    # 300ms is the user's own voice. Reduction must be skipped rather than
+    # subtracting their speech from itself — and the take must still score.
+    headers = _auth_headers(client)
+    take = tmp_path / "no_lead_in.wav"
+    _write_noisy_take(take, noise_amp=0.05, ambient_lead_in=False)
+
+    r = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S)
+    body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
+
+    assert body["status"] == "SUCCESS", body["error_message"]
+    # Bandpass-only keeps the contour close to the (untouched) native reference;
+    # full reduction here would gut it and drag the energy axis down.
+    assert body["score"] >= 80, body["score"]
+
+
+def test_reduction_failure_falls_open_and_still_scores(client, tmp_path, monkeypatch):
+    # A broken noisereduce install must cost the SNR-informed cleanup, not the
+    # user's score (same fail-open contract as the STT content gate).
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _no_noisereduce(name, *args, **kwargs):
+        if name == "noisereduce":
+            raise ModuleNotFoundError("No module named 'noisereduce'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_noisereduce)
+
+    headers = _auth_headers(client)
+    take = tmp_path / "noisy_take.wav"
+    _write_noisy_take(take, noise_amp=0.05)
+
+    r = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S)
+    body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
+
+    assert body["status"] == "SUCCESS", body["error_message"]
 
 
 def test_snr_is_persisted_on_the_user_recording_asset(client, tmp_path):

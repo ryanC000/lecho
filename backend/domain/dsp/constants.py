@@ -88,3 +88,17 @@ SEGMENT_MIN_FRAMES = 3
 # playback-start offset plus output latency in a shadow take.
 NCC_BLEED_THRESHOLD = 0.5
 BLEED_MAX_LAG_S = 1.5
+
+# Ambient-noise pipeline (PRD §6.1). Applied to the USER clip only, from the
+# orchestrator — see dsp/noise.py for why it stays out of features_for.
+BAND_LOW_HZ = 80.0          # below: room rumble, mic handling, mains hum
+BAND_HIGH_HZ = 4000.0       # above: hiss; French prosody carries nothing up there
+BANDPASS_ORDER = 4          # 4th-order Butterworth, zero-phase (sosfiltfilt)
+NOISE_PROFILE_S = 0.3       # lead-in taken as the ambient-noise profile
+# How far the body of the clip must sit above the lead-in for that lead-in to
+# count as ambient rather than speech. Below this, spectral subtraction would
+# be removing the user's own voice. Measured on synthetic takes (2026-08-03):
+# a clip starting mid-speech reads ~0.17 dB, one with a genuine quiet lead-in
+# reads 11-27 dB, so this sits conservatively in the gap. Placeholder until it
+# graduates on real noisy recordings.
+MIN_PROFILE_SNR_DB = 6.0

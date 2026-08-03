@@ -116,7 +116,8 @@ def run(job_id: str, session_factory):
             # reduction — and record its SNR as a quality signal on the asset.
             # The native reference is a curated studio clip and stays untouched;
             # so does features_for, which the pure-DSP suite pins.
-            user_snd, user_asset.snr_db = dsp.denoise_clip(user_path)
+            user_snd, user_snr_db = dsp.denoise_clip(user_path)
+            user_asset.snr_db = user_snr_db
             native_feat = dsp.features_for(native_path)
             user_feat = dsp.trim_silence(dsp.extract_features(user_snd))
             aligned = dsp.align(native_feat, user_feat)

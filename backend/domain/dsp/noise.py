@@ -18,19 +18,14 @@ import numpy as np
 import parselmouth
 from scipy.signal import butter, sosfiltfilt
 
+from .constants import (
+    BAND_HIGH_HZ,
+    BAND_LOW_HZ,
+    BANDPASS_ORDER,
+    MIN_PROFILE_SNR_DB,
+    NOISE_PROFILE_S,
+)
 from .features import load_mono_16k
-
-BAND_LOW_HZ = 80.0        # below: room rumble, mic handling, mains hum
-BAND_HIGH_HZ = 4000.0     # above: hiss; French prosody carries nothing up there
-FILTER_ORDER = 4          # 4th-order Butterworth, zero-phase (sosfiltfilt)
-
-NOISE_PROFILE_S = 0.3     # lead-in taken as the ambient-noise profile
-
-# How far the body of the clip must sit above the lead-in for that lead-in to
-# count as ambient rather than speech. Measured on synthetic takes: a clip that
-# starts mid-speech reads ~0 dB, one with a genuine quiet lead-in reads 11-27 dB,
-# so the two cases separate cleanly and this sits conservatively between them.
-MIN_PROFILE_SNR_DB = 6.0
 
 _SILENT_RMS = 1e-9        # below this the lead-in is digital silence, not a profile
 
@@ -41,7 +36,7 @@ def bandpass(samples: np.ndarray, sr: float) -> np.ndarray:
     `sosfiltfilt` (not `sosfilt`) because a one-pass IIR smears energy forward
     in time, which would shift the RMS contour the timing/energy axes score.
     """
-    sos = butter(FILTER_ORDER, [BAND_LOW_HZ, BAND_HIGH_HZ], btype="bandpass", fs=sr, output="sos")
+    sos = butter(BANDPASS_ORDER, [BAND_LOW_HZ, BAND_HIGH_HZ], btype="bandpass", fs=sr, output="sos")
     return sosfiltfilt(sos, samples)
 
 
@@ -49,9 +44,10 @@ def snr_db(samples: np.ndarray, sr: float):
     """10*log10(speech_rms^2 / noise_rms^2), profiling the first NOISE_PROFILE_S
     as noise and the remainder as speech.
 
-    None when there is no usable profile — a clip shorter than the window, or a
-    lead-in of digital silence (synthetic audio, or a recorder that pads with
-    zeros), which would divide by zero.
+    None when there is no usable profile: a clip shorter than the window, or a
+    silent one, where this would divide by zero. Note that a merely silent
+    *lead-in* still reads as a high SNR rather than None — zero-phase filtering
+    rings backward, so nothing stays exactly zero once bandpassed.
     """
     split = int(NOISE_PROFILE_S * sr)
     if len(samples) <= split:
@@ -74,10 +70,19 @@ def denoise(samples: np.ndarray, sr: float):
     if snr is None or snr < MIN_PROFILE_SNR_DB:
         return banded, snr
 
-    import noisereduce  # heavy (pulls matplotlib); only loaded when it will run
+    # Fails open, like the STT content gate: reduction is a quality enhancement,
+    # so a broken install must not cost the user their score. The import is
+    # deferred (noisereduce pulls matplotlib), which means an environment
+    # problem would otherwise first surface here, mid-job, as a raw traceback in
+    # the user-facing error_message.
+    try:
+        import noisereduce
 
-    profile = banded[: int(NOISE_PROFILE_S * sr)]
-    return noisereduce.reduce_noise(y=banded, sr=int(sr), y_noise=profile, stationary=True), snr
+        profile = banded[: int(NOISE_PROFILE_S * sr)]
+        cleaned = noisereduce.reduce_noise(y=banded, sr=int(sr), y_noise=profile, stationary=True)
+    except Exception:
+        return banded, snr
+    return cleaned, snr
 
 
 def denoise_clip(path):

@@ -47,7 +47,7 @@ from .features import (
     load_mono_16k,
     trim_silence,
 )
-from .noise import denoise, denoise_clip
+from .noise import bandpass, denoise, denoise_clip, snr_db
 from .scoring import (
     DEFAULT_SCORING,
     ScoringParams,
