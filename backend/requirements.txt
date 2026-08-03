@@ -12,3 +12,5 @@ pytest              # dev: test harness (test_dsp.py)
 httpx2              # dev: FastAPI TestClient transport (starlette 1.x requires the httpx2 distribution, not httpx)
 psycopg[binary]     # PostgreSQL driver for the deployed DATABASE_URL (SQLite needs no driver)
 boto3               # S3 storage backend (STORAGE_BACKEND=S3); unused when running on local disk
+scipy               # Butterworth bandpass in the ambient-noise pipeline (dsp/noise.py)
+noisereduce         # spectral noise reduction; pulls matplotlib/pillow (~50MB) as transitive deps

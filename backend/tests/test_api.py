@@ -307,6 +307,66 @@ def test_aligned_job_attaches_overlapping_words(client, tmp_path):
     assert all(seg["words"] == ["bonjour"] for seg in body["segments"])
 
 
+# --- Ambient-noise pipeline (master-plan ticket 17) --------------------------
+
+def _write_noisy_take(path, noise_amp, sr=16000, seed=0):
+    """A realistic noisy take: the native chirp, preceded by NOISE_PROFILE_S of
+    ambient-only lead-in, with white noise running throughout."""
+    import numpy as np
+
+    from domain.dsp import noise
+
+    n = int(NATIVE_DURATION_S * sr)
+    t = np.arange(n) / sr
+    phase = 2 * np.pi * (120.0 * t + (180.0 - 120.0) / (2 * NATIVE_DURATION_S) * t ** 2)
+    samples = 0.5 * np.sin(phase)
+    samples[: int(noise.NOISE_PROFILE_S * sr)] = 0.0  # ambient only during the lead-in
+    samples += np.random.default_rng(seed).normal(0, noise_amp, n)
+
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes())
+
+
+def test_noisy_recording_scores_without_a_hard_failure(client, tmp_path):
+    headers = _auth_headers(client)
+    take = tmp_path / "noisy_take.wav"
+    _write_noisy_take(take, noise_amp=0.15)
+
+    r = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S)
+    assert r.status_code == 202, r.text
+
+    body = client.get(f"/jobs/{r.json()['id']}", headers=headers).json()
+    assert body["status"] == "SUCCESS", body["error_message"]
+    assert body["score"] is not None
+
+
+def test_snr_is_persisted_on_the_user_recording_asset(client, tmp_path):
+    from domain.dsp import noise
+    from infra import database
+
+    headers = _auth_headers(client)
+    take = tmp_path / "noisy_take.wav"
+    _write_noisy_take(take, noise_amp=0.05)
+    job_id = _post_job(client, headers, take.read_bytes(), NATIVE_DURATION_S).json()["id"]
+
+    db = database.SessionLocal()
+    try:
+        asset = (
+            db.query(models.AudioAsset)
+            .filter(models.AudioAsset.job_id == job_id, models.AudioAsset.role == "USER_RECORDING")
+            .one()
+        )
+        # A genuine quiet lead-in against a full-level body: comfortably above
+        # the gate, so reduction ran and the number is a real measurement.
+        assert asset.snr_db is not None
+        assert asset.snr_db > noise.MIN_PROFILE_SNR_DB
+    finally:
+        db.close()
+
+
 # --- Auth edges -------------------------------------------------------------
 
 def test_duplicate_registration_rejected(client):

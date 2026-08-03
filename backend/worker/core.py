@@ -111,8 +111,14 @@ def run(job_id: str, session_factory):
                 # The gate already measured the take's words; reuse that WER as a
                 # pronunciation axis (None if the STT couldn't run — fails open).
                 content_score = dsp.content_score_from_wer(gate.wer)
+            # Ambient-noise pipeline (ticket 17): clean the USER clip only —
+            # bandpass + (when the lead-in is a credible noise profile) spectral
+            # reduction — and record its SNR as a quality signal on the asset.
+            # The native reference is a curated studio clip and stays untouched;
+            # so does features_for, which the pure-DSP suite pins.
+            user_snd, user_asset.snr_db = dsp.denoise_clip(user_path)
             native_feat = dsp.features_for(native_path)
-            user_feat = dsp.features_for(user_path)
+            user_feat = dsp.trim_silence(dsp.extract_features(user_snd))
             aligned = dsp.align(native_feat, user_feat)
             prosody_overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             overall = dsp.blend_content(prosody_overall, content_score)

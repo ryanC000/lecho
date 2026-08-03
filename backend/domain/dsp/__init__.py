@@ -15,6 +15,7 @@ Module map:
     features   load / extract / trim         align     DTW warping path
     scoring    0-100 axis scores             segments  tagged feedback runs
     archive    visualizer JSON               bleed     shadow-mode NCC gate
+    noise      user-clip cleanup + SNR (orchestrator-only; not in features_for)
 
 This package re-exports the whole public surface, so callers keep writing
 `dsp.features_for(...)`, `dsp.align(...)`, `dsp.TARGET_SR`. The constants
@@ -46,6 +47,7 @@ from .features import (
     load_mono_16k,
     trim_silence,
 )
+from .noise import denoise, denoise_clip
 from .scoring import (
     DEFAULT_SCORING,
     ScoringParams,
