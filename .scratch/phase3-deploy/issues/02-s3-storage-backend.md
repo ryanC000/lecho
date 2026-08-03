@@ -17,10 +17,10 @@ needed to exercise the path.
 
 **Blocked by:** None — can start immediately. Enables 04 (worker container needs shared storage).
 
-**Status:** ready-for-agent
+**Status:** done (commit `23975b5`, 2026-08-03)
 
-- [ ] `STORAGE_BACKEND=S3` round-trips an upload: save → exists → read → serve
-- [ ] `audio_response` issues a presigned redirect, not a file stream, under S3
-- [ ] `get_path` materializes to temp and the temp file is cleaned up after use
-- [ ] No caller outside `storage.py` changed; leak grep for raw S3/boto3 usage is clean
-- [ ] Full pytest suite green against a LocalStack/MinIO endpoint
+- [x] `STORAGE_BACKEND=S3` round-trips an upload: save → exists → read → serve
+- [x] `audio_response` issues a presigned redirect, not a file stream, under S3
+- [x] `get_path` materializes to temp and the temp file is cleaned up after use
+- [x] No caller outside `storage.py` changed; leak grep for raw S3/boto3 usage is clean
+- [x] Full pytest suite green against a LocalStack/MinIO endpoint
