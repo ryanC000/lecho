@@ -18,7 +18,7 @@ see the Python 3.14 native-build note. If it doesn't, record the blocker and sto
 **Blocked by:** None — can start immediately. Coordinate with master-plan #15 (env-config), which
 owns the env-var convention.
 
-**Status:** done (COMMIT_HASH)
+**Status:** done (`0054c05`)
 
 Chose the `information_schema.columns` lookup over Alembic — six column additions with DDL
 that is already portable did not justify a new dependency plus a `versions/` tree and stamping.
