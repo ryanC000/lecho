@@ -18,10 +18,16 @@ see the Python 3.14 native-build note. If it doesn't, record the blocker and sto
 **Blocked by:** None — can start immediately. Coordinate with master-plan #15 (env-config), which
 owns the env-var convention.
 
-**Status:** ready-for-agent
+**Status:** done (COMMIT_HASH)
 
-- [ ] `DATABASE_URL` selects the backend; unset falls back to the SQLite dev default
-- [ ] `check_same_thread` applied only for the SQLite scheme
-- [ ] Migrations apply idempotently on a fresh Postgres DB and on an existing SQLite one
-- [ ] Full pytest suite green on both SQLite (default) and a Postgres URL
-- [ ] `seed.py` populates a Postgres DB without error
+Chose the `information_schema.columns` lookup over Alembic — six column additions with DDL
+that is already portable did not justify a new dependency plus a `versions/` tree and stamping.
+`migrations.py` now branches on `conn.dialect.name`. `models.py` needed no changes: Boolean,
+Float, String and `DateTime(timezone=True)`/`server_default=func.now()` all map cleanly
+(`boolean`, `double precision`, `character varying`, `timestamptz DEFAULT now()`).
+
+- [x] `DATABASE_URL` selects the backend; unset falls back to the SQLite dev default
+- [x] `check_same_thread` applied only for the SQLite scheme
+- [x] Migrations apply idempotently on a fresh Postgres DB and on an existing SQLite one
+- [x] Full pytest suite green on both SQLite (default) and a Postgres URL
+- [x] `seed.py` populates a Postgres DB without error

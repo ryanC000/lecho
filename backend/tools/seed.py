@@ -2,7 +2,9 @@
 
     python -m tools.seed        # from backend/
 
-DESTRUCTIVE: deletes ./lecho.db and recreates it from scratch, which throws
+Targets whatever DATABASE_URL points at (./lecho.db by default).
+
+DESTRUCTIVE: drops every table and recreates them from scratch, which throws
 away any ingested native-clip rows. Everything is inside main() and guarded by
 __main__ precisely so importing this module can never do that by accident.
 """
@@ -12,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from api import security
-from infra.database import Base, SQLALCHEMY_DATABASE_URL
+from infra.database import Base, CONNECT_ARGS, SQLALCHEMY_DATABASE_URL
 from infra.models import Practice, User
 
 # Dev login credentials (documented so the seeded account can actually log in).
@@ -78,13 +80,15 @@ initial_practices = [
 
 def main():
     # Delete the old SQLite DB if it exists to ensure a clean slate
-    if os.path.exists("./lecho.db"):
+    if SQLALCHEMY_DATABASE_URL.startswith("sqlite") and os.path.exists("./lecho.db"):
         os.remove("./lecho.db")
 
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=CONNECT_ARGS)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    # Recreate all tables
+    # Recreate all tables (drop_all is the clean slate on servers, where there is
+    # no database file to delete).
+    Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
     db = SessionLocal()
