@@ -20,7 +20,9 @@ from fastapi.responses import FileResponse, RedirectResponse
 BACKEND_LOCAL = "LOCAL"
 BACKEND_S3 = "S3"
 
-STORAGE_ROOT = Path(__file__).resolve().parent / "storage"
+# backend/storage, not infra/storage: this module moved into infra/ during the
+# package refactor but the (gitignored) data directory stayed at the backend root.
+STORAGE_ROOT = Path(__file__).resolve().parent.parent / "storage"
 
 # Which backend is live. Plain env with a dev-safe default: local disk unless
 # the deployment says otherwise. Bucket/region/endpoint come from env too;

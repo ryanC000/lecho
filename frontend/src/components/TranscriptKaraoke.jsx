@@ -23,7 +23,9 @@ function normalizeToken(tok) {
 function buildTokens(transcript, words) {
   let wi = 0;
   return (transcript ? transcript.split(/\s+/) : []).map((raw) => {
-    const word = normalizeToken(raw) && wi < words.length ? words[wi++] : null;
+    // words is absent when the practice has no alignment; hooks run before the
+    // early return below, so this has to tolerate it rather than rely on that guard.
+    const word = normalizeToken(raw) && wi < (words?.length ?? 0) ? words[wi++] : null;
     return { raw, word };
   });
 }
