@@ -1,8 +1,16 @@
-"""Unit tests for align_natives' pure helpers (no conda / MFA / DB needed).
+"""Unit tests for align_natives (no conda / MFA needed — the aligner is stubbed).
 
 The TextGrid parser and transcript normalizer are the contract-critical pieces:
 they must be correct regardless of whether MFA ran or a file was hand-authored.
+The last test covers main()'s database binding on a throwaway SQLite file.
 """
+import json
+import sys
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from infra import database, models, storage
 from tools import align_natives
 
 
@@ -72,3 +80,39 @@ def test_normalize_curly_apostrophe_and_hyphen():
 
 def test_normalize_spells_out_digits():
     assert align_natives.normalize_transcript("Il a 2 chats") == "il a deux chats"
+
+
+def test_main_reads_practices_from_the_configured_database(tmp_path, monkeypatch):
+    """main() must go through infra.database's session factory, so it follows
+    DATABASE_URL like every other entry point instead of a hardcoded dev SQLite
+    path (phase3-deploy ticket 06). MFA itself is stubbed — this is about which
+    database the practices come from, not about alignment.
+    """
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'elsewhere.db'}", connect_args={"check_same_thread": False}
+    )
+    models.Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    db = Session()
+    practice = models.Practice(
+        title="Configured DB", transcript="bonjour", level="A1", length="Short",
+        speed="Slow", duration=1.0, audio_url="native/1.wav",
+    )
+    db.add(practice)
+    db.commit()
+    practice_id = practice.id
+    db.close()
+
+    monkeypatch.setattr(database, "SessionLocal", Session)
+    monkeypatch.setattr(storage, "STORAGE_ROOT", tmp_path / "storage")
+    monkeypatch.setattr(
+        align_natives, "align_practice",
+        lambda p: {"practice_id": p.id, "source": "manual", "model": "stub", "words": []},
+    )
+    monkeypatch.setattr(sys, "argv", ["align_natives"])
+
+    align_natives.main()
+
+    written = tmp_path / "storage" / storage.alignment_key(practice_id)
+    assert json.loads(written.read_text(encoding="utf-8"))["practice_id"] == practice_id

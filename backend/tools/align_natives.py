@@ -25,11 +25,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from domain.text_normalize import normalize_transcript
-from infra import storage
+from infra import database, storage
 from infra.models import Practice
 
 MFA_ENV = "mfa"
@@ -101,12 +98,11 @@ def main():
     parser.add_argument("--practice-id", type=int, help="Align only this practice (default: all with audio).")
     args = parser.parse_args()
 
-    # Bind to the backend's dev DB by absolute path so the script works from any
-    # cwd (database.py resolves sqlite:///./lecho.db relative to cwd at import).
-    engine = create_engine(
-        f"sqlite:///{BACKEND_DIR / 'lecho.db'}", connect_args={"check_same_thread": False}
-    )
-    db = sessionmaker(bind=engine)()
+    # Through infra.database like every other entry point, so DATABASE_URL is
+    # honoured; a Postgres deployment must not be silently written past into the
+    # dev SQLite file. Run from backend/ — the default sqlite:///./lecho.db is
+    # relative to cwd.
+    db = database.SessionLocal()
     try:
         query = db.query(Practice).filter(Practice.audio_url.isnot(None))
         if args.practice_id:
