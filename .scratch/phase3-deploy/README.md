@@ -31,6 +31,9 @@ disk, so audio must live in shared object storage first.
 6. **06 — align_natives.py DATABASE_URL** → verify: respects the env var like every other entry
    point. Independent of 03–05; can be picked up any time. — **done** (`b1f73cf`)
 
+7. **09 — Health endpoint** → verify: liveness survives a database outage, readiness does not.
+   Prerequisite for 05's probes. — **done** (`9de8bb1`)
+
 **Settled by 03:** the cluster in 05 must be **x86_64** — `praat-parselmouth` publishes no
 Linux aarch64 wheel, so Oracle's ARM free tier is out without a source build of Praat.
 

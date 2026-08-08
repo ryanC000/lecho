@@ -9,6 +9,11 @@ objects supplying the env vars the seams from 01–04 already read (`DATABASE_UR
 `k8s/` and are plain YAML — no Helm chart unless something actually needs templating. Liveness and
 readiness probes on the API; the worker needs neither (it polls, it doesn't serve).
 
+**The probe endpoints exist** (ticket 09, done): `livenessProbe` → `GET /health` (never touches
+Postgres, so a database blip cannot restart every API pod), `readinessProbe` → `GET /health/ready`
+(503 when the database is unreachable, so the pod is drained instead of killed). Do not point
+liveness at anything that queries the database.
+
 The worker `Deployment` is what makes the architecture legible: scaling audio processing means
 `replicas: N` on that object alone, with no effect on API capacity. That is the whole reason the
 queue in 04 exists.
