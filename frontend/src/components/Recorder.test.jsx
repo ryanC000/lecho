@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Recorder from './Recorder';
 import { blobToWav } from '../utils/audio';
 
@@ -25,8 +25,12 @@ class FakeMediaRecorder {
 class FakeAudioContext {
   constructor() {
     this.state = 'running';
-    this.currentTime = 0;
+    this.startedAt = Date.now();
     this.destination = {};
+  }
+  // Frozen. Only the follow-along tests need a moving clock; they subclass.
+  get currentTime() {
+    return 0;
   }
   createAnalyser() {
     return { fftSize: 0, getByteTimeDomainData: vi.fn() };
@@ -159,5 +163,84 @@ describe('Recorder in shadow mode', () => {
 
     await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
     expect(onUpload).toHaveBeenCalledWith(expect.anything(), 6.1, 'shadow');
+  });
+});
+
+// The follow-along transcript rides the same 50ms poll that auto-stops a shadow
+// take, so these drive the fake clock to check what it highlights.
+describe('Recorder follow-along transcript', () => {
+  const TRANSCRIPT = 'Bonjour tout le monde';
+  const WORDS = [
+    { start: 0.0, end: 0.5 },
+    { start: 0.6, end: 1.0 },
+    { start: 1.0, end: 1.4 },
+    { start: 1.4, end: 1.8 },
+  ];
+
+  const renderTake = (props) =>
+    render(
+      <Recorder
+        nativeDuration={5}
+        nativeAudioUrl="http://localhost:8000/practices/1/audio"
+        transcript={TRANSCRIPT}
+        words={WORDS}
+        onUpload={vi.fn()}
+        {...props}
+      />
+    );
+
+  const startTake = async () => {
+    fireEvent.click(screen.getByText('Start Recording'));
+    await screen.findByText('Stop Recording');
+  };
+
+  // Only these tests get a moving audio clock, so the shadow-playback poll can
+  // be driven by advancing the fake timers.
+  class AdvancingAudioContext extends FakeAudioContext {
+    get currentTime() {
+      return (Date.now() - this.startedAt) / 1000;
+    }
+  }
+
+  beforeEach(() => {
+    sessionStorage.setItem('lecho_headphones_ok', '1');
+    global.AudioContext = AdvancingAudioContext;
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('highlights the word the native clip has reached during a shadow take', async () => {
+    const { container } = renderTake({ mode: 'shadow' });
+    await startTake();
+
+    await act(async () => vi.advanceTimersByTime(700));
+    expect(container.querySelector('.karaoke-word.active').textContent.trim()).toBe('tout');
+
+    await act(async () => vi.advanceTimersByTime(900));
+    expect(container.querySelector('.karaoke-word.active').textContent.trim()).toBe('monde');
+  });
+
+  it('shows no transcript before a shadow take starts', () => {
+    const { container } = renderTake({ mode: 'shadow' });
+    expect(container.querySelector('.karaoke-transcript')).toBeNull();
+  });
+
+  it('shows no transcript during a solo take — there is no native playback', async () => {
+    const { container } = renderTake({ mode: 'solo' });
+    await startTake();
+
+    await act(async () => vi.advanceTimersByTime(700));
+    expect(container.querySelector('.karaoke-transcript')).toBeNull();
+  });
+
+  it('renders nothing for a shadow take on a practice with no alignment', async () => {
+    const { container } = renderTake({ mode: 'shadow', words: undefined });
+    await startTake();
+
+    await act(async () => vi.advanceTimersByTime(700));
+    expect(container.querySelector('.karaoke-transcript')).toBeNull();
   });
 });

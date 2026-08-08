@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link, useLoaderData } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
-import TranscriptKaraoke from '../components/TranscriptKaraoke';
+import WavesurferKaraoke from '../components/WavesurferKaraoke';
 import { apiFetch, isLoggedIn, API_BASE } from '../utils/auth';
 
 const levelColors = {
@@ -142,7 +142,7 @@ export default function Practice() {
               showSpeedControl={true}
               onReady={setNativeWave}
             />
-            <TranscriptKaraoke
+            <WavesurferKaraoke
               transcript={practice.transcript}
               words={alignment?.words}
               wavesurfer={nativeWave}
@@ -184,6 +184,8 @@ export default function Practice() {
           <Recorder
             nativeDuration={practice.duration}
             nativeAudioUrl={nativeAudioUrl}
+            transcript={practice.transcript}
+            words={alignment?.words}
             mode={mode}
             onUpload={handleUpload}
           />

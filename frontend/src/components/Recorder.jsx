@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { blobToWav } from '../utils/audio';
 import LiveWaveform from './LiveWaveform';
+import TranscriptKaraoke from './TranscriptKaraoke';
 
 // Client mirror of the server's per-mode duration gates (backend domain/job_gates.py).
 const SOLO_TOLERANCE_FRAC = 0.5;
@@ -10,7 +11,14 @@ const SHADOW_TOLERANCE_S = 0.5;
 const HEADPHONES_KEY = 'lecho_headphones_ok';
 
 // For simplicity, passing the native duration down as a prop
-export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo', onUpload }) {
+export default function Recorder({
+  nativeDuration,
+  nativeAudioUrl,
+  transcript,
+  words,
+  mode = 'solo',
+  onUpload,
+}) {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -18,6 +26,11 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
   const [showHeadphonesModal, setShowHeadphonesModal] = useState(false);
   // Exposed to the live waveform so it can read the mic signal in real time.
   const [analyser, setAnalyser] = useState(null);
+  // Seconds into the native clip while a shadow take plays it; null when no
+  // native playback is running (always, in solo mode). Ticking this at 20Hz
+  // re-renders the whole recorder, which is cheap — the live waveform draws on
+  // its own rAF loop and its effect deps don't change.
+  const [shadowTime, setShadowTime] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -111,8 +124,15 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
         nativeSourceRef.current = playback;
         const t0 = ctx.currentTime;
         playback.start(t0);
+        setShadowTime(0);
         autoStopRef.current = setInterval(() => {
-          if (ctx.currentTime - t0 >= nativeBuffer.duration + SHADOW_TAIL_S) {
+          // Wall-clock elapsed since playback started. It doubles as the
+          // follow-along transcript's position in the native clip ONLY because
+          // shadow playback always runs at rate 1.0 — a shadow speed control
+          // would have to publish media time instead.
+          const elapsed = ctx.currentTime - t0;
+          setShadowTime(elapsed);
+          if (elapsed >= nativeBuffer.duration + SHADOW_TAIL_S) {
             stopRecording();
           }
         }, 50);
@@ -162,6 +182,7 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
       try { nativeSourceRef.current.stop(); } catch (err) { /* already ended */ }
       nativeSourceRef.current = null;
     }
+    setShadowTime(null);
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
     }
@@ -259,6 +280,17 @@ export default function Recorder({ nativeDuration, nativeAudioUrl, mode = 'solo'
 
       {/* Live reactive sound wave — visible feedback that the mic is picking up audio */}
       {isRecording && <LiveWaveform analyser={analyser} active={isRecording} />}
+
+      {/* Follow-along transcript, rendered here rather than under the native
+          player so it's on screen while the user is shadowing. */}
+      {shadowTime !== null && (
+        <TranscriptKaraoke
+          transcript={transcript}
+          words={words}
+          currentTime={shadowTime}
+          isPlaying
+        />
+      )}
 
       <div className="controls">
         {isProcessing ? (
