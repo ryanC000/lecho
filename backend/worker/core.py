@@ -12,9 +12,13 @@ parameter (not created here) so tests and future transports can substitute it.
 Importing this module has no side effects.
 """
 import json
+import logging
+import time
 
 from domain import content_gate, dsp
 from infra import models, storage
+
+logger = logging.getLogger(__name__)
 
 ALGO_VERSION = "dsp-3"
 
@@ -27,6 +31,9 @@ BLEED_MESSAGE = (
 
 
 def fail_job(db, job: models.ProsodyJob, message: str):
+    # Logged before the flip so the reason is on the console even if the commit
+    # never lands.
+    logger.warning("job=%s status=%s -> FAILED reason=%s", job.id, job.status, message)
     job.status = "FAILED"
     job.error_message = message
     db.commit()
@@ -54,7 +61,9 @@ def run(job_id: str, session_factory):
     try:
         job = db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id).first()
         if not job:
+            logger.warning("job=%s not found — nothing to score", job_id)
             return
+        logger.info("job=%s scoring started mode=%s practice=%s", job_id, job.mode, job.practice_id)
 
         # 1. Resolve the user recording (persisted at ingest).
         user_asset = (
@@ -96,6 +105,10 @@ def run(job_id: str, session_factory):
                     dsp.TARGET_SR,
                 )
                 if peak_ncc > dsp.NCC_BLEED_THRESHOLD:
+                    logger.warning(
+                        "job=%s bleed detected peak_ncc=%.3f threshold=%.2f",
+                        job_id, peak_ncc, dsp.NCC_BLEED_THRESHOLD,
+                    )
                     raise dsp.BleedDetectedError(BLEED_MESSAGE)
             # Content gate (ticket 22): recognize the take's words (STT) and
             # reject unintelligible ones before scoring — prosody alone can't
@@ -105,6 +118,10 @@ def run(job_id: str, session_factory):
             transcript = job.practice.transcript if job.practice else None
             if transcript:
                 gate = content_gate.assess(user_path, transcript)
+                logger.info(
+                    "job=%s content gate assessed=%s passed=%s wer=%s (%s)",
+                    job_id, gate.assessed, gate.passed, gate.wer, gate.detail,
+                )
                 if gate.assessed and not gate.passed:
                     fail_job(db, job, content_gate.REJECT_MESSAGE)
                     return
@@ -116,13 +133,26 @@ def run(job_id: str, session_factory):
             # reduction — and record its SNR as a quality signal on the asset.
             # The native reference is a curated studio clip and stays untouched;
             # so does features_for, which the pure-DSP suite pins.
+            t0 = time.perf_counter()
             user_snd, user_snr_db = dsp.denoise_clip(user_path)
             user_asset.snr_db = user_snr_db
             native_feat = dsp.features_for(native_path)
             user_feat = dsp.trim_silence(dsp.extract_features(user_snd))
+            t_extract = time.perf_counter() - t0
+
+            t0 = time.perf_counter()
             aligned = dsp.align(native_feat, user_feat)
+            t_align = time.perf_counter() - t0
+
+            t0 = time.perf_counter()
             prosody_overall, pitch_score, timing_score, energy_score = dsp.score(aligned)
             overall = dsp.blend_content(prosody_overall, content_score)
+            t_score = time.perf_counter() - t0
+            logger.info(
+                "job=%s dsp extract=%.2fs align=%.2fs score=%.2fs",
+                job_id, t_extract, t_align, t_score,
+            )
+
             segments = dsp.make_segments(aligned)
             archive = dsp.build_archive(aligned)
         except dsp.DspError as exc:
@@ -154,6 +184,7 @@ def run(job_id: str, session_factory):
             )
 
         # 6. Finalize the job.
+        previous_status = job.status
         job.status = "SUCCESS"
         job.overall_match_score = round(overall, 1)
         job.pitch_score = round(pitch_score, 1)
@@ -162,12 +193,18 @@ def run(job_id: str, session_factory):
         job.content_score = round(content_score, 1) if content_score is not None else None
         job.algo_version = ALGO_VERSION
         db.commit()
+        # Logged after the commit — the opposite of fail_job, so the console can
+        # never claim a success that didn't land.
+        logger.info(
+            "job=%s status=%s -> SUCCESS overall=%.1f pitch=%.1f timing=%.1f energy=%.1f content=%s",
+            job_id, previous_status, overall, pitch_score, timing_score, energy_score,
+            f"{content_score:.1f}" if content_score is not None else None,
+        )
     except Exception as exc:  # never let a background failure vanish silently
+        logger.exception("job=%s unexpected error: %s", job_id, exc)
         db.rollback()
         job = db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id).first()
         if job:
-            job.status = "FAILED"
-            job.error_message = str(exc)
-            db.commit()
+            fail_job(db, job, str(exc))
     finally:
         db.close()

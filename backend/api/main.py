@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import auth, jobs, practices
-from infra import migrations, models
+from infra import logs, migrations, models
 from infra.database import engine
 
 
@@ -22,6 +22,7 @@ from infra.database import engine
 async def lifespan(app: FastAPI):
     # Create tables (for local MVP), then apply idempotent column additions.
     # Runs at startup, not import — importing this module must not touch the DB.
+    logs.configure()
     models.Base.metadata.create_all(bind=engine)
     migrations.run(engine)
     yield

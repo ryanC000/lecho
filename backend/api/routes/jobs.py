@@ -3,6 +3,7 @@
 Gate policy lives in domain/job_gates.py and payload assembly in
 api/serializers.py, so these handlers stay orchestration only.
 """
+import logging
 import uuid
 from datetime import datetime, timedelta
 
@@ -27,6 +28,7 @@ from ingest import clip_ingest
 from worker import core as worker_core
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/jobs", response_model=schemas.JobResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -58,6 +60,11 @@ def create_job(
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
+    # client_duration, not duration: the authoritative one is derived below.
+    logger.info(
+        "job=%s created status=%s practice=%s mode=%s client_duration=%.2fs user=%s",
+        new_job.id, new_job.status, sample.id, mode, user_audio_duration, current_user.id,
+    )
 
     # Persist the upload through the clip-ingestion module (store, derive
     # authoritative metadata, size + absolute duration gates, build the asset).
@@ -76,6 +83,7 @@ def create_job(
             duration_bounds=(job_gates.MIN_DURATION_S, job_gates.MAX_DURATION_S),
         )
     except clip_ingest.ClipRejectedError as exc:
+        logger.warning("job=%s upload rejected: %s", new_job.id, exc.log_message)
         worker_core.fail_job(db, new_job, exc.log_message)
         raise HTTPException(status_code=400, detail=exc.detail)
 
@@ -83,6 +91,10 @@ def create_job(
     # (the client-reported value above is not trusted).
     gate_error = job_gates.mode_duration_error(mode, asset.duration_seconds, sample.duration)
     if gate_error:
+        logger.warning(
+            "job=%s upload rejected (duration=%.2fs): %s",
+            new_job.id, asset.duration_seconds, gate_error,
+        )
         storage.delete(asset.storage_key)
         worker_core.fail_job(db, new_job, gate_error)
         raise HTTPException(status_code=400, detail=gate_error)
