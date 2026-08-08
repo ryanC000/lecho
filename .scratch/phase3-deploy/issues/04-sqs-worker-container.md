@@ -16,7 +16,8 @@ default) so dev and the test suite keep the synchronous in-process path and stay
 shares the app's local `storage/` disk, so both sides must read/write audio through S3 — a
 local-disk worker container would fail to find the uploaded clip.
 
-**Blocked by:** 03 (worker needs a container image). 02 is done (`23975b5`).
+**Blocked by:** nothing — 02 (`23975b5`) and 03 (`910bd67`) are both done. The app image and
+the compose stack (Postgres + MinIO) are in place; the worker service is added alongside them.
 
 **Carried forward from 02:** the S3 suite is green on a *fresh* bucket but not re-runnable
 against a dirty one — `conftest.py` isolates tests by pointing `STORAGE_ROOT` at a per-test
@@ -24,7 +25,7 @@ against a dirty one — `conftest.py` isolates tests by pointing `STORAGE_ROOT` 
 `test_alignment_endpoint_404_then_serves_contract` fails on the second run. Provision a fresh
 bucket per CI run, or add a per-test key prefix to the storage seam.
 
-**Status:** blocked
+**Status:** ready-for-agent
 
 - [ ] Upload publishes `job_id` to SQS; route returns without running DSP inline
 - [ ] Standalone worker polls SQS and scores via unchanged `worker.core.run`

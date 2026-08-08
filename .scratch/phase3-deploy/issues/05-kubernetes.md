@@ -30,7 +30,9 @@ are applied. Budget for what managed k8s actually costs beyond the control plane
   production, and a likely interview question.
 - **Credentials degrade off-AWS**: no IRSA, so AWS keys live in a k8s `Secret`. Acceptable only
   with the least-privilege policy this ticket already requires.
-- **Oracle's free tier is ARM64** — see 03's ARM wheel check before betting on it.
+- **Oracle's free tier is ARM64 — now ruled out.** 03 settled the wheel check:
+  `praat-parselmouth` ships no Linux aarch64 wheel at any Python version, so an ARM node
+  would have to build Praat's C++ from source. **Pick an x86_64 cluster.**
 
 Recommended: verify the manifests on `kind` (fast, free), then do one real cloud deploy and tear it
 down, rather than iterating against a billed cluster.

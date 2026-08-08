@@ -16,19 +16,23 @@ disk, so audio must live in shared object storage first.
 
 ```
 01 postgres ✅ ─┐
-02 s3       ✅ ─┼─→ 03 docker ─→ 04 sqs-worker ─→ 05 kubernetes
-                └──────────────────────────────────┘
+02 s3       ✅ ─┼─→ 03 docker ✅ ─→ 04 sqs-worker ─→ 05 kubernetes
+                └─────────────────────────────────────┘
 ```
 
 1. **01 — PostgreSQL** → verify: suite green against Postgres; SQLite still works for dev — **done**
 2. **02 — S3 storage backend** → verify: `BACKEND_S3` round-trips audio; routes unchanged — **done**
-3. **03 — Docker** → verify: `docker compose up` boots app + Postgres locally
+3. **03 — Docker** → verify: `docker compose up` boots app + Postgres locally — **done** (`910bd67`)
 4. **04 — SQS + worker container** → verify: job published to SQS, scored by a separate worker
+   — **unblocked by 03**
 5. **05 — Kubernetes** → verify: worker pod scores a job uploaded through the Ingress; worker
    scales independently of the API
 
 6. **06 — align_natives.py DATABASE_URL** → verify: respects the env var like every other entry
-   point. Independent of 03–05; can be picked up any time.
+   point. Independent of 03–05; can be picked up any time. — **done** (`b1f73cf`)
+
+**Settled by 03:** the cluster in 05 must be **x86_64** — `praat-parselmouth` publishes no
+Linux aarch64 wheel, so Oracle's ARM free tier is out without a source build of Praat.
 
 Ticket 05 was **Terraform/ECS Fargate**; it is now Kubernetes. Container hosting moves to k8s
 (local `kind`/`k3s` against real AWS S3 + SQS), and full infrastructure-as-code is deferred — it
