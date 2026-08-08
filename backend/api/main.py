@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import auth, jobs, practices
+from api.routes import auth, health, jobs, practices
 from infra import logs, migrations, models
 from infra.database import engine
 
@@ -39,6 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(health.router)
 app.include_router(practices.router)
 app.include_router(auth.router)
 app.include_router(jobs.router)
