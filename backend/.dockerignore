@@ -1,0 +1,11 @@
+# The build context is backend/. Keep dev-machine artifacts out: .venv is a
+# Windows-native virtualenv whose binaries are useless in a Linux image, and
+# lecho.db / storage/ are local state that must come from Postgres and S3
+# in the container.
+.venv/
+lecho.db
+storage/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/

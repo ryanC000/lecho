@@ -1,0 +1,87 @@
+# Production-shaped local stack: the app against real Postgres and a real S3
+# API, wired only through the env vars the seams in infra/database.py and
+# infra/storage.py already read. Nothing here is hardcoded in the image.
+#
+#   docker compose up --build
+#
+# The stack starts empty: the app creates its tables at startup but seeds no
+# rows, so /practices returns []. Populate it by hand — deliberately not a
+# compose service, because tools.seed drops every table and must never run
+# automatically on `up`:
+#
+#   docker compose exec app python -m tools.seed          # practices + dev login
+#   docker compose exec app python -m tools.ingest_native  # native clips (needs sources)
+#
+# The worker still runs in-process inside the app container; splitting it into
+# its own service is ticket 04.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lecho
+      POSTGRES_PASSWORD: lecho
+      POSTGRES_DB: lecho
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lecho -d lecho"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # MinIO, not LocalStack: the storage seam only needs S3, and MinIO is ~100MB
+  # against LocalStack's ~700MB. boto3 talks to it through S3_ENDPOINT_URL.
+  s3:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  # Creates the bucket, then exits. The retry loop stands in for a healthcheck
+  # on s3 — the minio image ships no curl to probe /minio/health with.
+  s3-init:
+    image: minio/mc
+    depends_on:
+      - s3
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://s3:9000 minioadmin minioadmin; do sleep 1; done;
+      mc mb --ignore-existing local/lecho;
+      "
+
+  app:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://lecho:lecho@db:5432/lecho
+      STORAGE_BACKEND: S3
+      S3_BUCKET: lecho
+      # KNOWN LIMITATION: this value is also what GET /practices/{id}/audio
+      # presigns its redirect with, and "s3" only resolves inside this network,
+      # so audio playback from a host browser fails. SigV4 signs the host
+      # header, so the client cannot rewrite the URL, and no single hostname
+      # reaches MinIO from both sides. A real fix means splitting the presign
+      # endpoint from the API endpoint in infra/storage.py — out of scope here,
+      # and moot on real S3, whose endpoint is publicly resolvable. Server-side
+      # scoring, which reads through the same seam, is unaffected.
+      S3_ENDPOINT_URL: http://s3:9000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  miniodata:
