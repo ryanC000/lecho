@@ -107,6 +107,41 @@ describe('Recorder', () => {
   });
 });
 
+describe('Recorder keyboard shortcut', () => {
+  it('annotates the record control with its keyboard shortcut', () => {
+    render(<Recorder nativeDuration={5} onUpload={vi.fn()} />);
+    expect(screen.getByText('Start Recording')).toHaveAttribute('aria-keyshortcuts', 'Space');
+  });
+
+  it('starts and stops a take with the spacebar', async () => {
+    blobToWav.mockResolvedValue({ blob: new Blob(), duration: 5.2 });
+    const onUpload = vi.fn();
+    render(<Recorder nativeDuration={5} onUpload={onUpload} />);
+
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    const stopButton = await screen.findByText('Stop Recording');
+    expect(stopButton).toHaveAttribute('aria-keyshortcuts', 'Space');
+
+    fireEvent.keyDown(document.body, { code: 'Space' });
+    await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores the spacebar while the user is typing in a field', async () => {
+    render(
+      <>
+        <input data-testid="field" />
+        <Recorder nativeDuration={5} onUpload={vi.fn()} />
+      </>
+    );
+
+    fireEvent.keyDown(screen.getByTestId('field'), { code: 'Space' });
+    await act(async () => {});
+
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(screen.queryByText('Stop Recording')).not.toBeInTheDocument();
+  });
+});
+
 describe('Recorder in shadow mode', () => {
   const renderShadow = (onUpload = vi.fn()) =>
     render(

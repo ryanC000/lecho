@@ -4,8 +4,27 @@ Keeps the decoding rules (JSON-encoded columns, derived flags) out of the route
 handlers, so a route reads as "look it up, serialize it".
 """
 import json
+from datetime import timezone
 
 from infra import models
+
+
+def job_list_item(job: models.ProsodyJob) -> dict:
+    """One row of the GET /jobs history list (schemas.JobListItem)."""
+    # SQLite hands back a naive UTC timestamp; tag it, or the browser reads the
+    # offset-less ISO string as local time and every row is hours off.
+    created_at = job.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return {
+        "id": job.id,
+        "practice_id": job.practice_id,
+        "practice_title": job.practice.title if job.practice else None,
+        "status": job.status,
+        "score": job.overall_match_score,
+        "mode": job.mode,
+        "created_at": created_at,
+    }
 
 
 def job_status_payload(job: models.ProsodyJob) -> dict:

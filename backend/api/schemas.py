@@ -51,6 +51,19 @@ class JobResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class JobListItem(BaseModel):
+    id: str
+    practice_id: Optional[int] = None
+    practice_title: Optional[str] = None
+    status: str
+    score: Optional[float] = None
+    mode: str = "solo"
+    created_at: datetime
+
+class JobListResponse(BaseModel):
+    jobs: List[JobListItem]
+    total: int
+
 class SegmentResponse(BaseModel):
     timestamp_start: float
     timestamp_end: float

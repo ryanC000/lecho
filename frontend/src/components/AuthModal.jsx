@@ -6,7 +6,7 @@ import { login, register } from '../utils/auth';
  * On success it stores the JWT (via utils/auth) and closes.
  */
 export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode }) {
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ email: '', password: '', confirm: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -15,7 +15,7 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
   // Reset fields whenever the modal opens or the mode changes.
   useEffect(() => {
     if (open) {
-      setForm({ name: '', email: '', password: '', confirm: '' });
+      setForm({ email: '', password: '', confirm: '' });
       setError(null);
     }
   }, [open, mode]);
@@ -84,20 +84,6 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          {isRegister && (
-            <label className="auth-field">
-              <span>Name</span>
-              <input
-                type="text"
-                autoComplete="name"
-                placeholder="Camille Dubois"
-                value={form.name}
-                onChange={update('name')}
-                required
-              />
-            </label>
-          )}
-
           <label className="auth-field">
             <span>Email</span>
             <input
@@ -134,12 +120,6 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
                 required
               />
             </label>
-          )}
-
-          {!isRegister && (
-            <button type="button" className="auth-link auth-forgot">
-              Forgot password?
-            </button>
           )}
 
           {error && <div className="alert-error">{error}</div>}

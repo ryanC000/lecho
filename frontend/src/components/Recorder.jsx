@@ -254,6 +254,24 @@ export default function Recorder({
     }
   };
 
+  // Spacebar toggles the take while the recorder is on screen (PRD a11y).
+  // No dep array: re-binding each render keeps the handler reading current state.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      // Guards first: bailing out must leave Space free to press whatever has
+      // focus (the headphones modal's buttons).
+      if (isProcessing || showHeadphonesModal) return;
+      e.preventDefault(); // stops page scroll, and Space re-firing a focused button
+      if (isRecordingRef.current) stopRecording();
+      else startRecording();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   // Make sure the mic is released if the component unmounts mid-recording.
   useEffect(() => {
     return () => {
@@ -298,11 +316,11 @@ export default function Recorder({
             Processing…
           </button>
         ) : !isRecording ? (
-          <button className="btn-primary" onClick={startRecording}>
+          <button className="btn-primary" onClick={startRecording} aria-keyshortcuts="Space">
             Start Recording
           </button>
         ) : (
-          <button className="btn-danger" onClick={stopRecording}>
+          <button className="btn-danger" onClick={stopRecording} aria-keyshortcuts="Space">
             Stop Recording
           </button>
         )}

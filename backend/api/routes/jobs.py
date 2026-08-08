@@ -14,6 +14,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
@@ -21,7 +22,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from api import schemas, security
-from api.serializers import job_status_payload
+from api.serializers import job_list_item, job_status_payload
 from domain import job_gates
 from infra import database, models, storage
 from ingest import clip_ingest
@@ -105,6 +106,26 @@ def create_job(
     background_tasks.add_task(worker_core.run, new_job.id, database.SessionLocal)
 
     return {"id": new_job.id, "status": new_job.status}
+
+
+@router.get("/jobs", response_model=schemas.JobListResponse)
+def list_jobs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(security.get_current_user),
+):
+    """The caller's job history, newest first — backs the history page."""
+    query = db.query(models.ProsodyJob).filter(models.ProsodyJob.user_id == current_user.id)
+    # id breaks ties: SQLite's CURRENT_TIMESTAMP is second-granular, and an
+    # unstable sort lets paging repeat or skip same-second takes.
+    jobs = (
+        query.order_by(models.ProsodyJob.created_at.desc(), models.ProsodyJob.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return {"jobs": [job_list_item(job) for job in jobs], "total": query.count()}
 
 
 @router.get("/jobs/{job_id}", response_model=schemas.JobStatusResponse)

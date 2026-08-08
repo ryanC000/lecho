@@ -2,6 +2,7 @@ import React from 'react';
 import { createBrowserRouter, RouterProvider, Link, Outlet, useLocation, ScrollRestoration } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
+import History from './pages/History';
 import Practice from './pages/Practice';
 import Results from './pages/Results';
 import AuthModal from './components/AuthModal';
@@ -60,8 +61,8 @@ function Layout() {
           <Link to="/library" className={isActive('/library') ? 'active' : ''}>
             Library
           </Link>
-          <Link to="#" className="">
-            Settings
+          <Link to="/history" className={isActive('/history') ? 'active' : ''}>
+            History
           </Link>
         </div>
         <div className="auth-actions">
@@ -111,6 +112,12 @@ const router = createBrowserRouter([
         path: "library",
         element: <Library />,
         loader: async () => apiGet('/practices')
+      },
+      {
+        // No loader: the job list is owner-scoped, so History fetches it with
+        // the bearer token itself (loaders here use the unauthenticated apiGet).
+        path: "history",
+        element: <History />
       },
       {
         path: "practice/:id",

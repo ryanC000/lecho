@@ -289,10 +289,6 @@
     box-shadow: 0 0 0 3px rgba(199, 90, 58, 0.1);
   }
 
-  .auth-forgot {
-    @apply self-end;
-  }
-
   .auth-submit {
     @apply w-full justify-center mt-1;
   }
@@ -1186,6 +1182,10 @@
     font-family: var(--font-hand);
     @apply text-lg mb-2;
     color: var(--color-ink-light);
+  }
+
+  .history-item-meta {
+    @apply flex items-center gap-2;
   }
 
   .library-meta {

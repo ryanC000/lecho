@@ -11,6 +11,7 @@ add them here when those land.
 """
 import json
 import wave
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -241,6 +242,115 @@ def test_coordinates_conflict_when_not_success(client, tmp_path):
     assert client.get(f"/jobs/{job_id}", headers=headers).json()["status"] == "FAILED"
 
     assert client.get(f"/jobs/{job_id}/coordinates", headers=headers).status_code == 409
+
+
+# --- Job history (master-plan ticket 18) ------------------------------------
+
+def _seed_jobs(client, email, specs):
+    """Insert history rows straight into the DB — the list endpoint doesn't care
+    how a job was produced, and running the worker per row would be slow.
+    `specs` is a list of (status, score); returns the ids, oldest first."""
+    from infra import database
+
+    db = database.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == email).one()
+        ids = []
+        for i, (job_status, score) in enumerate(specs):
+            job = models.ProsodyJob(
+                user_id=user.id,
+                practice_id=client.practice_id,
+                mode="solo",
+                status=job_status,
+                overall_match_score=score,
+                # Explicit, distinct timestamps: SQLite's CURRENT_TIMESTAMP is
+                # second-granular, so seeded rows would otherwise tie.
+                created_at=datetime(2026, 1, 1, 12, 0, i),
+            )
+            db.add(job)
+            db.flush()
+            ids.append(job.id)
+        db.commit()
+        return ids
+    finally:
+        db.close()
+
+
+def test_job_history_lists_owner_jobs_newest_first(client):
+    headers = _auth_headers(client)
+    ids = _seed_jobs(client, "tester@example.com", [("SUCCESS", 71.0), ("FAILED", None), ("PENDING", None)])
+
+    body = client.get("/jobs", headers=headers).json()
+
+    assert body["total"] == 3
+    assert [row["id"] for row in body["jobs"]] == list(reversed(ids))
+    newest, _, oldest = body["jobs"]
+    assert newest["status"] == "PENDING" and newest["score"] is None
+    assert oldest["status"] == "SUCCESS" and oldest["score"] == 71.0
+    assert oldest["practice_id"] == client.practice_id
+    assert oldest["practice_title"] == "Synthetic chirp"
+    assert oldest["mode"] == "solo"
+    # UTC-tagged, or the browser reads the timestamp as local time.
+    assert oldest["created_at"] == "2026-01-01T12:00:00Z"
+
+
+def test_job_history_paginates(client):
+    headers = _auth_headers(client)
+    ids = _seed_jobs(client, "tester@example.com", [("SUCCESS", float(i)) for i in range(5)])
+
+    first = client.get("/jobs?limit=2&offset=0", headers=headers).json()
+    assert first["total"] == 5
+    assert [row["id"] for row in first["jobs"]] == [ids[4], ids[3]]
+
+    last = client.get("/jobs?limit=2&offset=4", headers=headers).json()
+    assert last["total"] == 5
+    assert [row["id"] for row in last["jobs"]] == [ids[0]]
+
+
+def test_job_history_pages_are_stable_for_same_second_takes(client):
+    # Every row shares one timestamp, so ordering rests entirely on the id
+    # tiebreak — without it, paging could repeat or skip rows.
+    headers = _auth_headers(client)
+    ids = _seed_jobs(client, "tester@example.com", [("SUCCESS", 50.0)] * 4)
+    _same_created_at(ids)
+
+    paged = []
+    for offset in range(4):
+        paged += [row["id"] for row in client.get(f"/jobs?limit=1&offset={offset}", headers=headers).json()["jobs"]]
+
+    assert sorted(paged) == sorted(ids)
+
+
+def _same_created_at(job_ids):
+    """Collapse the seeded rows onto one timestamp."""
+    from infra import database
+
+    db = database.SessionLocal()
+    try:
+        for job_id in job_ids:
+            db.query(models.ProsodyJob).filter(models.ProsodyJob.id == job_id).update(
+                {"created_at": datetime(2026, 1, 1, 12, 0, 0)}
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_job_history_excludes_other_users_jobs(client):
+    owner = _auth_headers(client, "owner@example.com")
+    other = _auth_headers(client, "other@example.com")
+    owner_ids = _seed_jobs(client, "owner@example.com", [("SUCCESS", 80.0)])
+    _seed_jobs(client, "other@example.com", [("SUCCESS", 90.0), ("SUCCESS", 91.0)])
+
+    body = client.get("/jobs", headers=owner).json()
+    assert body["total"] == 1
+    assert [row["id"] for row in body["jobs"]] == owner_ids
+
+    assert client.get("/jobs", headers=other).json()["total"] == 2
+
+
+def test_job_history_requires_auth(client):
+    assert client.get("/jobs").status_code == 401
 
 
 # --- Word alignment (master-plan tickets 05/06, PRD 8.4) --------------------
