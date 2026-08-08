@@ -44,12 +44,29 @@ feed it the shadow clock.
 **Blocked by:** None. **Overlaps** architecture ticket 06 part 3, which extracts a `useRecorder`
 hook from this same file — whichever lands second should rebase rather than merge blind.
 
-**Status:** ready-for-agent
+**Status:** done — `bf572fe`, 2026-08-08
 
-- [ ] During a shadow take, words highlight in time with the native audio the user is shadowing
-- [ ] Solo listening still highlights exactly as before (no regression to the wavesurfer path)
-- [ ] Solo *takes* are unaffected — no transcript playback where there is no native audio
-- [ ] The transcript is visible on screen during a shadow take without scrolling away from the recorder
-- [ ] No second timer added; the existing 50ms auto-stop poll carries the clock
-- [ ] A practice with no alignment still renders nothing, in both modes
-- [ ] Frontend suite green (`npm test`)
+- [x] During a shadow take, words highlight in time with the native audio the user is shadowing
+- [x] Solo listening still highlights exactly as before (no regression to the wavesurfer path)
+- [x] Solo *takes* are unaffected — no transcript playback where there is no native audio
+- [x] The transcript is visible on screen during a shadow take without scrolling away from the recorder
+- [x] No second timer added; the existing 50ms auto-stop poll carries the clock
+- [x] A practice with no alignment still renders nothing, in both modes
+- [x] Frontend suite green (`npm test`)
+
+**How it landed:** `TranscriptKaraoke` now takes `currentTime`/`isPlaying` instead of a `wavesurfer`
+instance. The wavesurfer subscription moved verbatim into a new `WavesurferKaraoke` adapter
+(`frontend/src/components/WavesurferKaraoke.jsx`) rather than staying inline in `Practice.jsx` —
+every other component in the repo lives under `components/`, and keeping it separate also stops the
+playback clock re-rendering the transcription overlay and waveform. `Recorder` publishes
+`shadowTime` from the existing 50ms poll and renders the transcript itself.
+
+Verified by automated tests only (no manual browser pass): 35 frontend tests across 5 files, with
+new coverage for the plain clock (`TranscriptKaraoke.test.jsx`), the wavesurfer path including
+unsubscribe-on-unmount (`WavesurferKaraoke.test.jsx`), and the shadow take driven end to end through
+a fake advancing `AudioContext` (`Recorder.test.jsx`). The *visual* quality of the highlight
+in a real browser — timing feel, legibility while speaking — is unchecked and human-only.
+
+**Known, not addressed:** during a shadow take the transcript is on screen three times — the
+`TranslationOverlay`, the now-inert karaoke under Native Reference, and the live one in the
+recorder. Pre-existing placement the ticket didn't ask to change; worth a look if it reads as noise.
