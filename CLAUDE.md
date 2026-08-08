@@ -68,4 +68,12 @@ Changes:
 
 Do not include any Claude sign offs. 
 ```
+
+## 6. Don't write long comments. 
+
+
+```
+Use at most one or two line comments.
+```
+
 ---
