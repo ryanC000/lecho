@@ -2,7 +2,9 @@
 // (documented XSS caveat in the implementation plan §1.3); revisit with
 // httpOnly cookies if this ever handles more sensitive data.
 
-export const API_BASE = 'http://localhost:8000';
+// Baked in at build time by Vite, so a deployed bundle needs VITE_API_BASE set
+// when it is built, not when it is served.
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 const TOKEN_KEY = 'lecho_token';
 

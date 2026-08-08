@@ -8,6 +8,7 @@ Layering (enforced by review, not tooling):
     ingest -> infra
     domain -> nothing internal (pure policy and algorithms)
 """
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -28,12 +29,17 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def cors_origins() -> list[str]:
+    """CORS_ORIGINS as a comma-separated list; defaults to the Vite dev server."""
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 app = FastAPI(title="L'Écho API", lifespan=lifespan)
 
-# Configure CORS for React frontend (Vite default port 5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

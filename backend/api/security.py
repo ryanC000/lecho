@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Optional
@@ -10,8 +11,24 @@ from infra import database, models
 
 # Custom login and register logic
 
-# Replace with env variables in production
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey_for_lecho_mvp")
+logger = logging.getLogger(__name__)
+
+DEV_SECRET_KEY = "supersecretkey_for_lecho_mvp"
+
+
+def jwt_secret() -> str:
+    """JWT_SECRET_KEY, or the public dev default with a loud warning."""
+    secret = os.getenv("JWT_SECRET_KEY")
+    if secret:
+        return secret
+    logger.warning(
+        "JWT_SECRET_KEY is not set - signing tokens with the public dev default. "
+        "Set it before deploying: anyone can forge a token with this key."
+    )
+    return DEV_SECRET_KEY
+
+
+SECRET_KEY = jwt_secret()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
