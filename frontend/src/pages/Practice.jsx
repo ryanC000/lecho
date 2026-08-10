@@ -4,15 +4,9 @@ import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
 import WavesurferKaraoke from '../components/WavesurferKaraoke';
-import { apiFetch, isLoggedIn, API_BASE } from '../utils/auth';
-
-const levelColors = {
-  A1: 'var(--color-level-a1)',
-  A2: 'var(--color-level-a2)',
-  B1: 'var(--color-level-b1)',
-  B2: 'var(--color-level-b2)',
-  C1: 'var(--color-level-c1)',
-};
+import { apiFetch, API_BASE } from '../api/client';
+import { isLoggedIn } from '../api/auth';
+import { LEVEL_COLORS } from '../constants/levels';
 
 // Capture mode, persisted for the session (PRD 8.7: shadow is the default).
 const MODE_KEY = 'lecho_practice_mode';
@@ -90,7 +84,7 @@ export default function Practice() {
           <span
             className="level-badge"
             style={{ 
-              backgroundColor: levelColors[practice.level],
+              backgroundColor: LEVEL_COLORS[practice.level],
               viewTransitionName: `level-${practice.id}`
             }}
           >

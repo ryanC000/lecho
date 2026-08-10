@@ -1,24 +1,38 @@
-import React, { useEffect, useState } from 'react';
-import { login, register } from '../utils/auth';
+import React, { useEffect, useRef, useState } from 'react';
+import { login, loginWithGoogle, register } from '../api/auth';
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GIS_SRC = 'https://accounts.google.com/gsi/client';
+
+/** Load the Google Identity Services script once, resolving when it is ready. */
+function loadGoogleScript() {
+  const existing = document.querySelector(`script[src="${GIS_SRC}"]`);
+  if (existing) return existing._loaded;
+
+  const script = document.createElement('script');
+  script.src = GIS_SRC;
+  script.async = true;
+  script._loaded = new Promise((resolve, reject) => {
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Could not reach Google.'));
+  });
+  document.head.appendChild(script);
+  return script._loaded;
+}
 
 /**
  * AuthModal — real login / register popup, wired to the FastAPI backend.
- * On success it stores the JWT (via utils/auth) and closes.
+ * On success it stores the JWT (via api/auth) and closes.
  */
 export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode }) {
   const [form, setForm] = useState({ email: '', password: '', confirm: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const googleSlot = useRef(null);
 
   const isRegister = mode === 'register';
 
-  // Reset fields whenever the modal opens or the mode changes.
-  useEffect(() => {
-    if (open) {
-      setForm({ email: '', password: '', confirm: '' });
-      setError(null);
-    }
-  }, [open, mode]);
+  // Fields reset by remounting: App keys this component on open + mode.
 
   // Close on Escape.
   useEffect(() => {
@@ -27,6 +41,38 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  // Render Google's official button into the slot once the modal is open.
+  useEffect(() => {
+    if (!open || !GOOGLE_CLIENT_ID) return;
+    let cancelled = false;
+
+    loadGoogleScript()
+      .then(() => {
+        if (cancelled || !googleSlot.current) return;
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: async ({ credential }) => {
+            setError(null);
+            try {
+              await loginWithGoogle(credential);
+              onClose();
+            } catch (err) {
+              setError(err.message || 'Google sign-in failed.');
+            }
+          },
+        });
+        window.google.accounts.id.renderButton(googleSlot.current, {
+          theme: 'outline',
+          size: 'large',
+          width: 320,
+          text: isRegister ? 'signup_with' : 'continue_with',
+        });
+      })
+      .catch((err) => !cancelled && setError(err.message));
+
+    return () => { cancelled = true; };
+  }, [open, isRegister, onClose]);
 
   if (!open) return null;
 
@@ -54,11 +100,6 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleGoogle = () => {
-    // TODO: Firebase / OAuth provider sign-in.
-    console.log('[mockup] continue with Google');
   };
 
   return (
@@ -129,19 +170,15 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
           </button>
         </form>
 
-        <div className="auth-divider">
-          <span>or</span>
-        </div>
-
-        <button type="button" className="auth-google" onClick={handleGoogle}>
-          <svg className="auth-google-icon" viewBox="0 0 18 18" aria-hidden="true">
-            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.62z" />
-            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
-            <path fill="#FBBC05" d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33z" />
-            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
-          </svg>
-          Continue with Google
-        </button>
+        {/* No client ID configured (see .env.example) — hide rather than show a dead button. */}
+        {GOOGLE_CLIENT_ID && (
+          <>
+            <div className="auth-divider">
+              <span>or</span>
+            </div>
+            <div className="auth-google-slot" ref={googleSlot} />
+          </>
+        )}
 
         <p className="auth-switch">
           {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}

@@ -57,7 +57,28 @@ The frontend is built using React, Vite, and CSS. It requires Node.js (v18+ reco
 
 ---
 
-### 3. Backend layout
+### 3. Google Sign-In (optional)
+
+Email/password login works with no configuration. To enable "Continue with Google"
+you need your own OAuth client ID — creating it is a manual step in the Google Cloud
+console, documented in **[backend/.env.example](file:///c:/Users/Chiew%20Yuit%20Shuin%20Rya/Projects/lecho/backend/.env.example)**.
+
+Once you have the ID, put the *same* value in both places:
+
+```bash
+cp backend/.env.example backend/.env       # GOOGLE_CLIENT_ID=...
+cp frontend/.env.example frontend/.env     # VITE_GOOGLE_CLIENT_ID=...
+```
+
+Then start the backend with `uvicorn api.main:app --reload --env-file .env` and restart
+Vite. Until it is configured the button is hidden and `POST /auth/google` returns 503.
+
+Google sign-in creates an account keyed on the verified email address, with no password;
+if that email already has a password account, it signs into that account instead.
+
+---
+
+### 4. Backend layout
 
 The backend is organized by role; `backend/` is the import root, so all commands
 below run from `backend/` with the venv python.
@@ -78,7 +99,7 @@ domain, infra`, `ingest → infra`, and `domain` imports nothing internal.
 The scoring worker runs in-process via FastAPI `BackgroundTasks` today; Phase 3
 swaps that dispatch for SQS without touching `worker.core.run`.
 
-### 4. Offline tools
+### 5. Offline tools
 
 Run as modules so `backend/` stays the import root:
 

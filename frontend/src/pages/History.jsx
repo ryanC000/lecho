@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiFetch } from '../utils/auth';
+import { apiFetch } from '../api/client';
 
 const PAGE_SIZE = 20;
 

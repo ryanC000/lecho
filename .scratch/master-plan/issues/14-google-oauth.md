@@ -1,6 +1,6 @@
 # 14 — Google OAuth (self-hosted GIS ID-token flow)
 
-**What to build:** Real "Sign in with Google" replacing the mock button. The frontend loads the Google Identity Services script, renders the official button, and posts the returned ID-token credential to a new auth endpoint. The backend verifies it with the pure-Python `google-auth` library (pre-check the wheel installs binary-only first) against the configured client ID, requires a verified email, finds-or-creates the user, and returns the app's own JWT — same token schema, no Firebase, no redirect flow. Password hash becomes nullable with an `auth_provider` column; password login must 401 cleanly on a null hash *before* any hash verification. 🧑 Embedded human step: create the OAuth client ID in the Google Cloud console and register the dev origin — documented in the env examples.
+**What to build:** Real "Sign in with Google" replacing the mock button. The frontend loads the Google Identity Services script, renders the official button, and posts the returned ID-token credential to a new auth endpoint. The backend verifies it with the pure-Python `google-auth` library (pre-check the wheel installs binary-only first) against the configured client ID, requires a verified email, finds-or-creates the user, and returns the app's own JWT — same token schema, no Firebase, no redirect flow. Password hash becomes nullable with an `auth_provider` column; password login must 401 cleanly on a null hash *before* any hash verification. 🧑 Embedded human step: create the OAuth client ID in the Google Cloud console and register the dev origin — documented in the env examples, and split out as ticket [24](24-google-oauth-client-id.md) once the code landed.
 
 **Blocked by:** None — can start immediately (the human console step gates only live verification, not the code).
 
@@ -10,3 +10,8 @@
 - [ ] Unverified-email credentials rejected
 - [ ] Google-created user attempting password login gets a clean 401, no server error
 - [ ] Existing password users unaffected; migration adds the provider column idempotently
+
+## Comments
+Code landed 2026-08-10 (`682ab67`). The last three boxes are covered by tests; the first cannot
+be ticked from here — it needs a real client ID, which is ticket
+[24](24-google-oauth-client-id.md). Leave this open until 24 closes.

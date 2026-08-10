@@ -1,15 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLoaderData } from 'react-router-dom';
-
-const levels = ['All', 'A1', 'A2', 'B1', 'B2', 'C1'];
-
-const levelColors = {
-  A1: 'var(--color-level-a1)',
-  A2: 'var(--color-level-a2)',
-  B1: 'var(--color-level-b1)',
-  B2: 'var(--color-level-b2)',
-  C1: 'var(--color-level-c1)',
-};
+import { LEVELS, LEVEL_COLORS } from '../constants/levels';
+import LevelFilter from '../components/LevelFilter';
 
 export default function Dashboard() {
   const practices = useLoaderData();
@@ -30,17 +22,7 @@ export default function Dashboard() {
       </div>
 
       {/* Filter pills */}
-      <div className="filter-bar">
-        {levels.map(level => (
-          <button
-            key={level}
-            className={`filter-pill${activeLevel === level ? ' active' : ''}`}
-            onClick={() => setActiveLevel(level)}
-          >
-            {level}
-          </button>
-        ))}
-      </div>
+      <LevelFilter levels={LEVELS} activeLevel={activeLevel} onChange={setActiveLevel} />
 
       {/* Practice cards */}
       <div className="practice-grid" key={activeLevel}>
@@ -56,7 +38,7 @@ export default function Dashboard() {
               <span
                 className="level-badge"
                 style={{
-                  backgroundColor: levelColors[practice.level],
+                  backgroundColor: LEVEL_COLORS[practice.level],
                   viewTransitionName: `level-${practice.id}`
                 }}
               >

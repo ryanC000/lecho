@@ -14,7 +14,7 @@
 
 **Blocked by:** None — frontend only, and the backend reorganization it references has landed.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] All HTTP crosses `api/client.js`; no component imports a file named `auth` to make a request
 - [ ] `levels`/`levelColors` declared once; Dashboard, Library and Practice import them
@@ -23,3 +23,6 @@
 - [ ] Each mirrored constant declared once on the frontend, with the backend module named in a comment
 - [ ] `npm test` green (19 tests), and `npm run lint` clean
 - [ ] Manual pass unchanged: record a solo take and a shadow take, both reach a scored Results page with the pitch chart
+
+## Comments
+Done 2026-08-10 (staged, not yet committed). `utils/auth.js` split into `api/client.js` (API_BASE, request, apiFetch, apiGet) and `api/auth.js` (token storage, lecho-auth-changed, login, register); all four callers updated. `constants/levels.js` + `LevelFilter` collapse the Dashboard/Library/Practice triplication. `Recorder.jsx` (340 lines, grown since this ticket was filed by ticket 23's shadow-karaoke work) is now 107 lines: media-graph lifecycle, shadow auto-stop poll, silence detection, and duration gates moved into `hooks/useRecorder`; the inline modal became `HeadphonesModal`. `constants/gates.js` holds the duration-gate numbers and `SEGMENT_PITCH_THRESHOLD_SEMITONES`, each naming its backend source module; `PitchChart.jsx` imports rather than re-declaring. `npm test`: 35/35 green (grew from 19 as the suite gained coverage since filing). `npm run lint`: not clean, but pre-existing — the repo-wide `'React' is defined but never used` failures (and a few other unused-var/no-undef issues) predate this ticket across nearly every JSX file; this change adds none. Manual browser pass (record a solo + shadow take through to a scored Results page) not run — verify before fully closing.

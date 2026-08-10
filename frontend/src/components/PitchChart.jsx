@@ -1,4 +1,5 @@
 import React from 'react';
+import { SEGMENT_PITCH_THRESHOLD_SEMITONES } from '../constants/gates';
 
 /**
  * Hand-rolled SVG pitch-overlay chart (no chart library) for a scored job.
@@ -40,10 +41,9 @@ import React from 'react';
  *                 summary of flagged regions.
  */
 
-// Same constant the backend uses to flag pitch-deviation segments
-// (dsp.SEGMENT_PITCH_THRESHOLD_SEMITONES). Kept in sync by hand. Also the
-// half-height of the target band.
-const DEVIATION_SEMITONES = 2.0;
+// Also the half-height of the target band. See constants/gates.js for the
+// backend source of truth.
+const DEVIATION_SEMITONES = SEGMENT_PITCH_THRESHOLD_SEMITONES;
 
 // Fallback (no alignment): unvoiced runs at or below this length are bridged
 // (unvoiced consonants / short stops); longer ones are treated as pauses.

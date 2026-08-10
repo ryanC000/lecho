@@ -11,7 +11,9 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    # Null for accounts created through Google Sign-In — they have no password.
+    password_hash = Column(String, nullable=True)
+    auth_provider = Column(String, nullable=False, server_default="password", default="password")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

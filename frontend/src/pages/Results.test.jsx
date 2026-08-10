@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Results from './Results';
-import { apiFetch } from '../utils/auth';
+import { apiFetch } from '../api/client';
 
-vi.mock('../utils/auth', () => ({ apiFetch: vi.fn() }));
+vi.mock('../api/client', () => ({ apiFetch: vi.fn() }));
 
 const jsonResponse = (data) => ({ json: async () => data });
 
