@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { login, register } from '../utils/auth';
+import { login, register } from '../api/auth';
 
 /**
  * AuthModal — real login / register popup, wired to the FastAPI backend.
- * On success it stores the JWT (via utils/auth) and closes.
+ * On success it stores the JWT (via api/auth) and closes.
  */
 export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode }) {
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });

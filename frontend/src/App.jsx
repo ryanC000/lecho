@@ -5,7 +5,8 @@ import Library from './pages/Library';
 import Practice from './pages/Practice';
 import Results from './pages/Results';
 import AuthModal from './components/AuthModal';
-import { isLoggedIn, clearToken, apiGet } from './utils/auth';
+import { isLoggedIn, clearToken } from './api/auth';
+import { apiGet } from './api/client';
 import './index.css';
 
 // Global Layout Wrapper
@@ -19,7 +20,7 @@ function Layout() {
   const openAuth = (mode) => setAuth({ open: true, mode });
   const closeAuth = () => setAuth((a) => ({ ...a, open: false }));
 
-  // Track login state; utils/auth dispatches 'lecho-auth-changed' on login/logout.
+  // Track login state; api/auth dispatches 'lecho-auth-changed' on login/logout.
   const [loggedIn, setLoggedIn] = React.useState(isLoggedIn());
   React.useEffect(() => {
     const sync = () => setLoggedIn(isLoggedIn());

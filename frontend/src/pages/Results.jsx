@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import AccuracyRing from '../components/AccuracyRing';
 import TranslationOverlay from '../components/TranslationOverlay';
 import PitchChart from '../components/PitchChart';
-import { apiFetch } from '../utils/auth';
+import { apiFetch } from '../api/client';
 
 const POLL_INTERVAL_MS = 2000;
 
