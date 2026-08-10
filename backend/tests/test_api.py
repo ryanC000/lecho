@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from infra import models, storage
+from api import security
+from infra import database, models, storage
 from worker import core as worker_core
 from conftest import NATIVE_DURATION_S
 from tools.synth_audio import write_sine_wav
@@ -426,3 +427,79 @@ def test_login_wrong_password_rejected(client):
     _auth_headers(client)
     r = client.post("/auth/login", data={"username": "tester@example.com", "password": "wrong"})
     assert r.status_code == 401
+
+
+# --- Google sign-in ---------------------------------------------------------
+
+def _stub_google(monkeypatch, **claims):
+    """Configure a client ID and make token verification return `claims`.
+    The signature check itself is google-auth's job, not ours to re-test."""
+    monkeypatch.setattr(security, "GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
+    monkeypatch.setattr(security, "verify_google_id_token", lambda credential: claims)
+
+
+def test_google_login_creates_user_and_authenticates(client, monkeypatch):
+    _stub_google(monkeypatch, email="camille@example.com", email_verified=True)
+    r = client.post("/auth/google", json={"credential": "fake-id-token"})
+    assert r.status_code == 200, r.text
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    # The app JWT works on a real authenticated endpoint.
+    job = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S)
+    assert job.status_code == 202, job.text
+
+    db = database.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == "camille@example.com").one()
+        assert user.auth_provider == "google"
+        assert user.password_hash is None
+    finally:
+        db.close()
+
+
+def test_google_login_rejects_unverified_email(client, monkeypatch):
+    _stub_google(monkeypatch, email="camille@example.com", email_verified=False)
+    r = client.post("/auth/google", json={"credential": "fake-id-token"})
+    assert r.status_code == 401
+
+
+def test_google_login_rejects_invalid_credential(client, monkeypatch):
+    monkeypatch.setattr(security, "GOOGLE_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
+    monkeypatch.setattr(
+        security, "verify_google_id_token",
+        lambda credential: (_ for _ in ()).throw(ValueError("bad signature")),
+    )
+    r = client.post("/auth/google", json={"credential": "tampered"})
+    assert r.status_code == 401
+
+
+def test_google_login_unconfigured_returns_503(client):
+    r = client.post("/auth/google", json={"credential": "fake-id-token"})
+    assert r.status_code == 503
+
+
+def test_google_user_password_login_returns_401_not_500(client, monkeypatch):
+    _stub_google(monkeypatch, email="camille@example.com", email_verified=True)
+    assert client.post("/auth/google", json={"credential": "fake-id-token"}).status_code == 200
+
+    r = client.post("/auth/login", data={"username": "camille@example.com", "password": PASSWORD})
+    assert r.status_code == 401
+
+
+def test_google_login_reuses_existing_password_account(client, monkeypatch):
+    _auth_headers(client)  # registers tester@example.com with a password
+    _stub_google(monkeypatch, email="tester@example.com", email_verified=True)
+    r = client.post("/auth/google", json={"credential": "fake-id-token"})
+    assert r.status_code == 200, r.text
+
+    db = database.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == "tester@example.com").one()
+        assert user.auth_provider == "password"  # untouched
+        assert user.password_hash is not None
+    finally:
+        db.close()
+
+    # Password login still works for that account.
+    r = client.post("/auth/login", data={"username": "tester@example.com", "password": PASSWORD})
+    assert r.status_code == 200

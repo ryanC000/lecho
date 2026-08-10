@@ -314,19 +314,9 @@
     @apply text-xs uppercase tracking-wide;
   }
 
-  .auth-google {
-    @apply w-full justify-center;
-    background: var(--color-card);
-    border: 1px solid var(--color-cream-border);
-    color: var(--color-ink);
-  }
-
-  .auth-google:hover {
-    background: var(--color-card-hover);
-  }
-
-  .auth-google-icon {
-    @apply w-4 h-4;
+  /* Google renders its own button in here; we only place it. */
+  .auth-google-slot {
+    @apply flex justify-center;
   }
 
   .auth-switch {

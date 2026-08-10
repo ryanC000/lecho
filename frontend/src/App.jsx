@@ -89,6 +89,7 @@ function Layout() {
       </main>
 
       <AuthModal
+        key={`${auth.open}-${auth.mode}`}  // remount = fresh form on every open / mode switch
         open={auth.open}
         mode={auth.mode}
         onClose={closeAuth}

@@ -17,6 +17,9 @@ class UserResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class GoogleCredential(BaseModel):
+    credential: str  # the ID token returned by Google Identity Services
+
 class Token(BaseModel):
     access_token: str
     token_type: str

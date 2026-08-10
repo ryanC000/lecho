@@ -48,3 +48,15 @@ export async function login(email, password) {
   setToken(data.access_token);
   return data;
 }
+
+/** POST /auth/google — trades a Google ID token for the app's own JWT. */
+export async function loginWithGoogle(credential) {
+  const res = await request('/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  });
+  const data = await res.json();
+  setToken(data.access_token);
+  return data;
+}
