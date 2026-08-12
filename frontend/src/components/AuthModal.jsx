@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { login, loginWithGoogle, register } from '../api/auth';
+import { SketchButton } from './core/SketchButton';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
@@ -165,9 +166,9 @@ export default function AuthModal({ open, mode = 'login', onClose, onSwitchMode 
 
           {error && <div className="alert-error">{error}</div>}
 
-          <button type="submit" className="btn-primary auth-submit" disabled={submitting}>
+          <SketchButton type="submit" disabled={submitting}>
             {submitting ? 'Please wait…' : isRegister ? 'Create account' : 'Log in'}
-          </button>
+          </SketchButton>
         </form>
 
         {/* No client ID configured (see .env.example) — hide rather than show a dead button. */}

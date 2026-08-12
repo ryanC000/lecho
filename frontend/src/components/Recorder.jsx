@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import LiveWaveform from './LiveWaveform';
 import TranscriptKaraoke from './TranscriptKaraoke';
 import HeadphonesModal from './HeadphonesModal';
+import { SketchButton } from './core/SketchButton';
 import useRecorder from '../hooks/useRecorder';
 
 // Session flag: the user confirmed they're on headphones for shadow takes.
@@ -100,17 +101,17 @@ export default function Recorder({
 
       <div className="controls">
         {isProcessing ? (
-          <button className="btn-primary" disabled>
+          <SketchButton disabled>
             Processing…
-          </button>
+          </SketchButton>
         ) : !isRecording ? (
-          <button className="btn-primary" onClick={startRecording} aria-keyshortcuts="Space">
+          <SketchButton onClick={startRecording} aria-keyshortcuts="Space">
             Start Recording
-          </button>
+          </SketchButton>
         ) : (
-          <button className="btn-danger" onClick={stopRecording} aria-keyshortcuts="Space">
+          <SketchButton onClick={stopRecording} aria-keyshortcuts="Space">
             Stop Recording
-          </button>
+          </SketchButton>
         )}
       </div>
       {error && <div className="alert-error">{error}</div>}

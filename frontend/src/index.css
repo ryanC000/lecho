@@ -23,7 +23,6 @@
   --color-accent-warm: #C75A3A;
   --color-accent-warm-hover: #B04E30;
   --color-accent-violet: #786CDA;
-  --color-accent-violet-hover: #675BC8;
   --color-accent-sage: #6C8E68;
   --color-accent-amber: #D4982A;
 
@@ -32,6 +31,16 @@
   --color-level-b1: #786CDA;
   --color-level-b2: #9B6CDA;
   --color-level-c1: #C75A3A;
+}
+
+/* Alias layer for components/core, authored against a generic token
+   vocabulary rather than this app's --color-* names. */
+:root {
+  --accent-primary: var(--color-accent-warm);
+  --text-primary: var(--color-ink);
+  --text-on-accent: #FFFFFF;
+  --text-micro: 0.75rem;
+  --text-small: 0.875rem;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -169,39 +178,9 @@
     }
   }
 
-  .user-profile {
-    @apply text-sm font-medium px-4 py-2 rounded-full cursor-pointer transition-all duration-200;
-    color: var(--color-accent-warm);
-    background-color: rgba(199, 90, 58, 0.1);
-  }
-
-  .user-profile:hover {
-    background-color: rgba(199, 90, 58, 0.18);
-    @apply scale-103;
-  }
-
   /* ── Navbar auth buttons ── */
   .auth-actions {
     @apply flex items-center gap-2;
-  }
-
-  .auth-signin-btn {
-    @apply text-sm font-medium px-4 py-2 rounded-full cursor-pointer transition-all duration-200;
-    background: transparent;
-    border: 1px solid transparent;
-    color: var(--color-ink-light);
-  }
-
-  .auth-signin-btn:hover {
-    color: var(--color-ink);
-    background: var(--color-card);
-    border-color: var(--color-cream-border);
-    @apply translate-y-0;
-    box-shadow: none;
-  }
-
-  .auth-signup-btn {
-    @apply px-4 py-2;
   }
 
   /* ═══════════════════════════════════════════════════
@@ -289,7 +268,8 @@
     box-shadow: 0 0 0 3px rgba(199, 90, 58, 0.1);
   }
 
-  .auth-submit {
+  /* The submit button comes from components/core, which takes no className. */
+  .auth-form > button {
     @apply w-full justify-center mt-1;
   }
 
@@ -358,39 +338,6 @@
   }
 
   /* ── Paper card ── */
-  .paper-card {
-    background: var(--color-card);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--color-cream-border);
-    @apply rounded-2xl p-6 transition-all duration-300;
-    box-shadow: 0 1px 4px rgba(59, 49, 39, 0.04);
-  }
-
-  .paper-card:hover {
-    background: var(--color-card-hover);
-    box-shadow: 0 6px 20px rgba(59, 49, 39, 0.07);
-  }
-
-  /* ── Notebook-ruled lines for sections ── */
-  .notebook-ruled {
-    background-image: repeating-linear-gradient(transparent,
-        transparent 31px,
-        var(--color-cream-border) 31px,
-        var(--color-cream-border) 32px);
-    background-position: 0 8px;
-  }
-
-  /* ── Sketchbook margin line ── */
-  .sketch-margin {
-    @apply relative;
-  }
-
-  .sketch-margin::before {
-    content: '';
-    @apply absolute left-10 top-0 bottom-0 w-px;
-    background-color: rgba(199, 90, 58, 0.15);
-  }
-
   /* ── Section ── */
   .flat-section {
     @apply mb-10;
@@ -470,35 +417,6 @@
 
   button:active {
     @apply translate-y-0;
-  }
-
-  .btn-primary {
-    background-color: var(--color-accent-warm);
-    border-color: var(--color-accent-warm);
-    @apply text-white;
-  }
-
-  .btn-primary:hover {
-    background-color: var(--color-accent-warm-hover);
-    border-color: var(--color-accent-warm-hover);
-    box-shadow: 0 4px 14px rgba(199, 90, 58, 0.25);
-  }
-
-  .btn-purple {
-    background-color: var(--color-accent-violet);
-    border-color: var(--color-accent-violet);
-    @apply text-white;
-  }
-
-  .btn-purple:hover {
-    background-color: var(--color-accent-violet-hover);
-    border-color: var(--color-accent-violet-hover);
-  }
-
-  .btn-danger {
-    background-color: var(--color-accent-warm);
-    border-color: var(--color-accent-warm);
-    @apply text-white;
   }
 
   .alert-error {

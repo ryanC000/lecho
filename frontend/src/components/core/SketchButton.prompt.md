@@ -1,35 +1,37 @@
 # SketchButton
 
-Five hand-drawn button treatments that extend `Button`'s `sketch` shape. Use when a
-button should read as drawn or pressed onto the page rather than as UI chrome —
-practice screens, results, anywhere the sketchbook voice is doing the work.
+The app's action button: an ink outline traced twice, the second pass drawn just off
+register. Use it for text-label actions — record, submit, confirm, navigate.
 
-For ordinary app chrome (nav, forms, modals) keep using `Button`.
+Not for segmented controls, icon buttons, or link-styled buttons. Those keep their own
+classes in `index.css` (`.speed-btn`, `.filter-pill`, `.mode-btn`, `.play-pause-btn`,
+`.auth-close`, `.auth-link`), because they need selected state, an icon, or a link look
+that this component deliberately does not provide.
 
-## Treatments
+## Props
 
-| `treatment` | Reads as | Use for |
+| Prop | Values | Notes |
 |---|---|---|
-| `double` | A line traced twice, second pass off-register | The strongest primary action on a screen |
-| `stamp` | Dashed ink, typewriter caps, set askew; straightens on hover | Confirmations, "mark as done", low-frequency actions |
-| `marker` | A rough highlighter block behind the label, no border | Secondary actions in a dense screen — the quietest of the five |
-| `torn` | A strip torn from the page | Pairs with `Card variant="torn"`; good next to torn surfaces |
-| `pinned` | Sketch outline plus the sticky-note pushpin, tilted | Board-like layouts using `Card variant="sticky"` |
+| `variant` | `primary` (default), `secondary` | Filled terracotta, or an ink outline on paper |
+| `size` | `sm`, `md` (default) | `sm` for the navbar and dense list rows |
+| `alt` | boolean | Mirrors the wobble to the opposite angle |
+| `disabled` | boolean | Renders at 0.5 opacity |
+| `type` | `button` (default), `submit` | |
+
+Any other prop (`aria-*`, `data-*`) is forwarded to the underlying `<button>`.
 
 ## Rules
 
-- One treatment per screen. Mixing `double` and `pinned` in the same view reads as two
-  different design systems; pick one and use `variant` to separate primary from secondary.
-- `alt` mirrors the tilt and wobble to the opposite angle. Set it on the second of any two
-  adjacent buttons so they don't sit at matching angles.
-- No new colours: `primary` is `--accent-primary`, `secondary` is ink on `--surface-raised`,
-  and `marker` uses `--accent-warning` / `--accent-secondary` washes already in the palette.
-- Press always settles flush or down — never a scale-down, matching the rest of the system.
-- No icons. These are text-label buttons, consistent with the system's icon restraint.
+- Set `alt` on the second of any two adjacent buttons so their outlines don't sit at
+  matching angles.
+- No icons. These are text-label buttons.
+- Press settles down and flush — never a scale-down.
+- The colours come from `--accent-primary` / `--text-primary` / `--text-on-accent`,
+  aliased onto the app palette at the top of `index.css`. Add no new ones.
 
 ## Example
 
 ```jsx
-<SketchButton treatment="double" onClick={start}>Start Recording</SketchButton>
-<SketchButton treatment="double" variant="secondary" alt onClick={replay}>Play again</SketchButton>
+<SketchButton onClick={start}>Start Recording</SketchButton>
+<SketchButton variant="secondary" alt onClick={back}>Back to Dashboard</SketchButton>
 ```

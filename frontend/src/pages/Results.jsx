@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import AccuracyRing from '../components/AccuracyRing';
 import TranslationOverlay from '../components/TranslationOverlay';
 import PitchChart from '../components/PitchChart';
+import { SketchButton } from '../components/core/SketchButton';
 import { apiFetch } from '../api/client';
 
 const POLL_INTERVAL_MS = 2000;
@@ -75,7 +76,7 @@ export default function Results() {
       <div className="workspace page-enter">
         <div className="alert-error">{error}</div>
         <div className="results-actions">
-          <Link to="/"><button>Back to Dashboard</button></Link>
+          <Link to="/"><SketchButton variant="secondary">Back to Dashboard</SketchButton></Link>
         </div>
       </div>
     );
@@ -105,10 +106,10 @@ export default function Results() {
         <div className="results-actions">
           {canRetry && job.practice_id && (
             <Link to={`/practice/${job.practice_id}`}>
-              <button className="btn-primary">Try Again</button>
+              <SketchButton>Try Again</SketchButton>
             </Link>
           )}
-          <Link to="/"><button>Back to Dashboard</button></Link>
+          <Link to="/"><SketchButton variant="secondary" alt>Back to Dashboard</SketchButton></Link>
         </div>
       </div>
     );
@@ -201,11 +202,11 @@ export default function Results() {
       <div className="results-actions">
         {job.practice_id && (
           <Link to={`/practice/${job.practice_id}`}>
-            <button className="btn-primary">Practice Again</button>
+            <SketchButton>Practice Again</SketchButton>
           </Link>
         )}
         <Link to="/">
-          <button>Back to Dashboard</button>
+          <SketchButton variant="secondary" alt>Back to Dashboard</SketchButton>
         </Link>
       </div>
     </div>

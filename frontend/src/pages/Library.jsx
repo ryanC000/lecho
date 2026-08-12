@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLoaderData } from 'react-router-dom';
 import { LEVELS, LEVEL_COLORS } from '../constants/levels';
 import LevelFilter from '../components/LevelFilter';
+import { SketchButton } from '../components/core/SketchButton';
 
 export default function Library() {
   const practices = useLoaderData();
@@ -45,7 +46,7 @@ export default function Library() {
               </span>
             </div>
             <Link to={`/practice/${sample.id}`}>
-              <button className="btn-primary">Practice</button>
+              <SketchButton size="sm">Practice</SketchButton>
             </Link>
           </div>
         ))}

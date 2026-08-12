@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../api/client';
+import { SketchButton } from '../components/core/SketchButton';
 
 const PAGE_SIZE = 20;
 
@@ -88,13 +89,13 @@ export default function History() {
 
       {pageCount > 1 && (
         <div className="results-actions">
-          <button onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
+          <SketchButton variant="secondary" onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
             Previous
-          </button>
+          </SketchButton>
           <span className="library-meta">Page {page + 1} of {pageCount}</span>
-          <button onClick={() => setPage((p) => p + 1)} disabled={page + 1 >= pageCount}>
+          <SketchButton variant="secondary" alt onClick={() => setPage((p) => p + 1)} disabled={page + 1 >= pageCount}>
             Next
-          </button>
+          </SketchButton>
         </div>
       )}
     </div>

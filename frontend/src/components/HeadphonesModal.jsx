@@ -1,4 +1,5 @@
 import React from 'react';
+import { SketchButton } from './core/SketchButton';
 
 // Headphones confirmation before the first shadow take of the session
 // (PRD §5 / Edge Case 3).
@@ -22,10 +23,10 @@ export default function HeadphonesModal({ show, onConfirm, onCancel }) {
           </p>
         </div>
         <div className="controls" style={{ justifyContent: 'center' }}>
-          <button className="btn-primary" onClick={onConfirm}>
+          <SketchButton onClick={onConfirm}>
             I'm wearing headphones
-          </button>
-          <button onClick={onCancel}>Cancel</button>
+          </SketchButton>
+          <SketchButton variant="secondary" alt onClick={onCancel}>Cancel</SketchButton>
         </div>
       </div>
     </div>
