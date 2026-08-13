@@ -41,6 +41,11 @@
   --text-on-accent: #FFFFFF;
   --text-micro: 0.75rem;
   --text-small: 0.875rem;
+
+  /* Secondary text on the dashboard redesign — deliberately not --color-ink-light,
+     which reviewed as too faint. */
+  --color-ink-mid: #6B5C4A;
+  --shadow-sticker: 4px 4px 0 rgba(59, 49, 39, 0.16);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -145,37 +150,27 @@
   }
 
   .nav-links {
-    @apply flex gap-8 bg-[var(--color-card)] backdrop-blur-sm px-6 py-2 rounded-full;
-    border: 1px solid var(--color-cream-border);
+    @apply flex gap-8 items-center;
   }
 
   .nav-links a {
-    @apply text-sm font-medium transition-colors duration-200 relative;
-    color: var(--color-ink-light);
+    font-family: var(--font-serif);
+    font-weight: 400;
+    font-size: 1.2rem;
+    color: var(--color-ink-mid);
+    border-bottom: 2px solid transparent;
+    padding-bottom: 4px;
+    @apply transition-colors duration-200;
   }
 
-  .nav-links a:hover,
+  .nav-links a:hover {
+    color: var(--color-ink);
+    border-bottom-color: var(--color-cream-border);
+  }
+
   .nav-links a.active {
     color: var(--color-ink);
-  }
-
-  .nav-links a.active::after {
-    content: '';
-    @apply absolute -bottom-1 left-1/5 right-1/5 h-0.5 rounded-sm;
-    background-color: var(--color-accent-warm);
-    animation: navIn 0.3s ease forwards;
-  }
-
-  @keyframes navIn {
-    from {
-      opacity: 0;
-      transform: scaleX(0);
-    }
-
-    to {
-      opacity: 1;
-      transform: scaleX(1);
-    }
+    border-bottom-color: var(--color-accent-warm);
   }
 
   /* ── Navbar auth buttons ── */
@@ -601,23 +596,503 @@
   }
 
   /* ═══════════════════════════════════════════════════
-     DASHBOARD
+     SKETCH PANEL — ink-outline surface (dashboard redesign)
      ═══════════════════════════════════════════════════ */
 
-  .dashboard-hero {
-    @apply text-center mb-10;
+  .sketch-panel {
+    position: relative;
+    height: 100%;
+    box-sizing: border-box;
   }
 
-  .dashboard-hero-title {
+  .sketch-panel-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .sketch-panel-content {
+    position: relative;
+    height: 100%;
+    padding: 24px 26px;
+    box-sizing: border-box;
+  }
+
+  .sketch-panel-label {
+    display: inline-block;
+    margin-bottom: 14px;
+  }
+
+  .sketch-panel-label-text {
     font-family: var(--font-hand);
-    @apply text-5xl font-normal mb-2;
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--color-ink);
   }
 
-  .dashboard-hero-sub {
+  .sketch-panel-label-rule {
+    display: block;
+    width: 100%;
+    height: 5px;
+    margin-top: 3px;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     DASHBOARD
+     ═══════════════════════════════════════════════════ */
+
+  /* Widens the shared .content wrapper for the two-column dashboard grid;
+     applied by App.jsx only on the dashboard route. */
+  .content-dashboard {
+    max-width: 1200px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 336px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  .dashboard-rail,
+  .dashboard-main {
+    display: grid;
+    gap: 20px;
+  }
+
+  /* ── Last-take panel ── */
+  .last-take-greeting {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 2rem;
+    line-height: 1.15;
+    margin-bottom: 14px;
+  }
+
+  .last-take-eyebrow {
     font-family: var(--font-hand);
-    @apply text-xl;
-    color: var(--color-ink-light);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-ink-mid);
+  }
+
+  .last-take-title {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    line-height: 1.3;
+    margin: 6px 0 12px;
+  }
+
+  .last-take-time {
+    font-family: var(--font-hand);
+    font-size: 0.8rem;
+    color: var(--color-ink-mid);
+  }
+
+  .last-take-ring-row {
+    display: flex;
+    justify-content: center;
+  }
+
+  .last-take-empty {
+    font-family: var(--font-hand);
+    font-size: 0.9rem;
+    color: var(--color-ink-mid);
+    padding: 12px 0;
+  }
+
+  /* ── Sticky stat notes ── */
+  .stat-notes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .stat-note {
+    background: var(--color-paper-light);
+    border: 1px solid var(--color-cream-border);
+    border-radius: 12px;
+    padding: 14px 8px;
+    text-align: center;
+    box-shadow: var(--shadow-sticker);
+  }
+
+  .stat-note:nth-child(1) { transform: rotate(-1.5deg); }
+  .stat-note:nth-child(2) { transform: rotate(1deg); }
+  .stat-note:nth-child(3) { transform: rotate(-2deg); }
+
+  .stat-note-value {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 1.6rem;
+  }
+
+  .stat-note:nth-child(1) .stat-note-value { color: var(--color-accent-warm); }
+  .stat-note:nth-child(2) .stat-note-value { color: var(--color-accent-violet); }
+  .stat-note:nth-child(3) .stat-note-value { color: var(--color-accent-sage); }
+
+  .stat-note-label {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-mid);
+    margin-top: 2px;
+  }
+
+  /* ── "your performance" panel ── */
+  .performance-rows {
+    display: grid;
+    gap: 16px;
+  }
+
+  .performance-row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+
+  .performance-row-name {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .performance-row-value {
+    font-family: var(--font-hand);
+    font-size: 0.92rem;
+  }
+
+  .performance-bar-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-paper-dark);
+    overflow: hidden;
+  }
+
+  .performance-bar-fill {
+    height: 100%;
+  }
+
+  /* ── Pencil-circled level filter (Dashboard only; Library keeps .filter-pill) ── */
+  .level-filter-ink {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+    padding: 2px 0 4px;
+  }
+
+  .level-filter-ink-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: var(--color-ink-mid);
+  }
+
+  .level-filter-ink-item.active {
+    color: var(--color-ink);
+  }
+
+  .level-filter-ink-loop {
+    position: absolute;
+    left: -5px;
+    top: -5px;
+    width: calc(100% + 10px);
+    height: calc(100% + 10px);
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  /* ── Continue shadowing panel ── */
+  .continue-panel {
+    background: var(--color-accent-warm);
+    border-radius: 20px;
+    padding: 24px;
+  }
+
+  .continue-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    gap: 12px;
+  }
+
+  .continue-panel-title {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 1.9rem;
+    color: #fff;
+    line-height: 1;
+  }
+
+  .continue-panel-link {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    border-radius: 14px 26px 12px 22px / 22px 12px 24px 14px;
+    padding: 8px 18px;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+
+  .continue-panel-link:hover {
+    color: #fff;
+    transform: translate(-1px, -1px);
+  }
+
+  .continue-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+
+  .continue-clip-card {
+    display: block;
+    background: rgba(255, 255, 255, 0.94);
+    border-radius: 14px;
+    padding: 16px;
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .continue-clip-card:hover {
+    background: #fff;
+    box-shadow: 0 6px 16px rgba(59, 49, 39, 0.12);
+    transform: translateY(-3px);
+  }
+
+  .continue-clip-card:active {
+    transform: translateY(0);
+  }
+
+  .continue-clip-title {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    line-height: 1.25;
+    margin: 10px 0 4px;
+  }
+
+  .continue-clip-meta {
+    margin-top: 2px;
+  }
+
+  .continue-clip-score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin: 14px 0 6px;
+  }
+
+  .continue-clip-score {
+    font-family: var(--font-hand);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+
+  .continue-clip-score-max {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--color-ink-mid);
+  }
+
+  .continue-clip-unattempted {
+    font-family: var(--font-hand);
+    font-size: 0.78rem;
+    color: var(--color-ink-mid);
+    margin: 14px 0 6px;
+  }
+
+  .continue-clip-bar-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-paper-dark);
+    overflow: hidden;
+  }
+
+  .continue-clip-bar-fill {
+    height: 100%;
+  }
+
+  .continue-panel-empty {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: rgba(255, 255, 255, 0.85);
+    padding: 8px 2px;
+  }
+
+  /* ── Bottom row: minutes chart + recent takes ── */
+  .dashboard-bottom-row {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .week-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 148px;
+  }
+
+  .week-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .week-bar {
+    width: 100%;
+    border-radius: 8px 8px 4px 4px;
+    background: var(--color-paper-dark);
+    position: relative;
+  }
+
+  .week-bar.is-peak {
+    background: var(--color-accent-warm);
+  }
+
+  .week-bar.is-compare {
+    background: var(--color-accent-violet);
+    opacity: 0.35;
+  }
+
+  .week-bar-value {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-hand);
+    font-size: 0.78rem;
+    color: var(--color-accent-warm);
+  }
+
+  .week-bar-day {
+    font-family: var(--font-hand);
+    font-size: 0.76rem;
+    color: var(--color-ink-mid);
+  }
+
+  .week-bar-day.is-peak {
+    color: var(--color-ink);
+  }
+
+  /* Minutes tracking has no backend data yet (see ticket 01, dashboard-redesign) */
+  .week-placeholder {
+    height: 148px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: var(--font-hand);
+    font-size: 0.86rem;
+    color: var(--color-ink-mid);
+  }
+
+  .recent-takes-list {
+    display: grid;
+    gap: 2px;
+  }
+
+  .recent-take-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--color-cream-border);
+  }
+
+  .recent-take-row:last-child {
+    border-bottom: none;
+  }
+
+  .recent-take-info {
+    min-width: 0;
+  }
+
+  .recent-take-title {
+    font-family: var(--font-serif);
+    font-size: 1.02rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .recent-take-meta {
+    font-family: var(--font-hand);
+    font-size: 0.76rem;
+    color: var(--color-ink-mid);
+  }
+
+  .recent-take-score {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 1.15rem;
+  }
+
+  .recent-takes-empty {
+    font-family: var(--font-hand);
+    font-size: 0.86rem;
+    color: var(--color-ink-mid);
+    padding: 8px 0;
+  }
+
+  /* ── New-clips banner (static copy — no "added this week" signal exists yet) ── */
+  .new-clips-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    background: var(--color-paper-light);
+    border: 2px solid var(--color-ink);
+    border-radius: 18px 34px 14px 28px / 28px 16px 32px 18px;
+    padding: 18px 24px;
+    box-shadow: var(--shadow-sticker);
+  }
+
+  .new-clips-banner-heading {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .new-clips-banner-body {
+    font-family: var(--font-hand);
+    font-weight: 700;
+    font-size: 0.88rem;
+    color: #5A4C3C;
+    margin-top: 4px;
+  }
+
+  .new-clips-banner-action {
+    flex-shrink: 0;
   }
 
   .dashboard-list {
@@ -683,51 +1158,6 @@
     background: var(--color-ink);
     border-color: var(--color-ink);
     color: var(--color-paper);
-  }
-
-  /* ═══════════════════════════════════════════════════
-     PRACTICE CARDS
-     ═══════════════════════════════════════════════════ */
-
-  .practice-grid {
-    @apply grid gap-4;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  }
-
-  .practice-card {
-    @apply flex flex-col gap-3 p-5 rounded-2xl cursor-pointer transition-all duration-300;
-    background: var(--color-card);
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--color-cream-border);
-  }
-
-  .practice-card:hover {
-    background: var(--color-card-hover);
-    box-shadow: 0 8px 28px rgba(59, 49, 39, 0.08);
-    @apply -translate-y-1;
-  }
-
-  .practice-card-header {
-    @apply flex items-center gap-3 mb-4;
-  }
-
-  .practice-card-title {
-    font-family: var(--font-serif);
-    font-weight: 600;
-    @apply text-lg;
-    color: var(--color-ink);
-    display: inline-block;
-    width: fit-content;
-  }
-
-  .practice-card-transcript {
-    font-family: var(--font-serif);
-    @apply text-sm leading-relaxed;
-    color: var(--color-ink-light);
-  }
-
-  .practice-card-meta {
-    @apply flex gap-2 mt-auto;
   }
 
   /* ═══════════════════════════════════════════════════
@@ -1172,6 +1602,16 @@
      RESPONSIVE
      ═══════════════════════════════════════════════════ */
 
+  @media (max-width: 1080px) {
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .continue-panel-grid {
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+  }
+
   @media (max-width: 640px) {
     .navbar {
       @apply px-4 py-3 flex-wrap gap-2;
@@ -1185,8 +1625,8 @@
       @apply mt-6 px-4;
     }
 
-    .practice-grid {
-      @apply grid-cols-1;
+    .dashboard-bottom-row {
+      grid-template-columns: 1fr;
     }
 
     .translation-text {
@@ -1207,10 +1647,6 @@
 
     .results-actions button {
       @apply justify-center;
-    }
-
-    .dashboard-hero-title {
-      @apply text-4xl;
     }
   }
 }

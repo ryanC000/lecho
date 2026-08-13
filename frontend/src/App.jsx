@@ -43,6 +43,8 @@ function Layout() {
     return location.pathname.startsWith(path);
   };
 
+  const isDashboard = location.pathname === '/';
+
   return (
     <div 
       className="app-container"
@@ -85,7 +87,7 @@ function Layout() {
         </div>
       </header>
 
-      <main className="content">
+      <main className={`content${isDashboard ? ' content-dashboard' : ''}`}>
         <ScrollRestoration />
         <Outlet />
       </main>
