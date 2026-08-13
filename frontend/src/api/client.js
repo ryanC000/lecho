@@ -3,8 +3,10 @@
 import { getToken } from './auth';
 
 // Baked in at build time by Vite, so a deployed bundle needs VITE_API_BASE set
-// when it is built, not when it is served.
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+// when it is built, not when it is served. `??`, not `||`: an empty value is a
+// deliberate choice meaning "same origin" (the k8s build, where one Ingress
+// fronts both the bundle and the API), and `||` would discard it.
+export const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
 
 function authHeaders() {
   const token = getToken();

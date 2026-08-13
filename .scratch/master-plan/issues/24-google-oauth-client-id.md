@@ -18,6 +18,14 @@ gets checked by hand. Full step-by-step lives in `backend/.env.example`.
 - [ ] Backend started with `--env-file .env`; button renders instead of being hidden
 - [ ] Real Google account signs in, gets an app JWT, and can post a job — 14's first box ticks
 
-**Note for deployment:** the client ID's origin list is per-environment. Whatever host the
-frontend ends up on (ticket 15 / phase3-deploy) has to be added here too, or sign-in breaks in
-production while working fine locally.
+- [ ] **`http://localhost` (no port) also registered** — the Kubernetes deployment serves the
+      bundle through the Ingress on port 80, and Google treats that as a **different origin** from
+      the Vite dev server's `http://localhost:5173`. Both must be listed or sign-in works in dev
+      and 400s in the cluster.
+- [ ] Same ID passed to the frontend image at build time —
+      `docker build --build-arg VITE_GOOGLE_CLIENT_ID=... ./frontend`. Vite inlines it at build,
+      so it cannot come from the k8s ConfigMap; the backend's copy does come from the Secret.
+
+**Note for deployment:** the client ID's origin list is per-environment and per-port. Whatever host
+the frontend ends up on has to be added here too, or sign-in breaks in production while working
+fine locally. See `k8s/README.md` §5.

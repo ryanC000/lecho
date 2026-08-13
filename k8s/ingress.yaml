@@ -1,0 +1,49 @@
+# One origin, two backends; frontend and API routes don't collide, so no rewrites.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lecho
+  namespace: lecho
+  annotations:
+    # ingress-nginx defaults to 1MB; domain/job_gates.py accepts uploads to 10MB.
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /practices
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /jobs
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

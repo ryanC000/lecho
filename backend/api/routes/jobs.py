@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from api import schemas, security
 from api.serializers import job_list_item, job_status_payload
 from domain import job_gates
-from infra import database, models, storage
+from infra import database, models, queue, storage
 from ingest import clip_ingest
 from worker import core as worker_core
 
@@ -102,8 +102,12 @@ def create_job(
     db.add(asset)
     db.commit()
 
-    # Dispatch to background worker (Phase 3 replaces this with SQS + a container).
-    background_tasks.add_task(worker_core.run, new_job.id, database.SessionLocal)
+    # Dispatch behind the queue seam: published to SQS for a separate worker
+    # container, or run in-process after the response under INLINE.
+    queue.publish(
+        new_job.id,
+        lambda: background_tasks.add_task(worker_core.run, new_job.id, database.SessionLocal),
+    )
 
     return {"id": new_job.id, "status": new_job.status}
 

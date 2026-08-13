@@ -49,6 +49,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "SessionLocal", TestingSession)
     monkeypatch.setattr(main, "engine", engine)  # lifespan create_all/migrations
     monkeypatch.setattr(storage, "STORAGE_ROOT", tmp_path / "storage")
+    # The S3 equivalent of the temp STORAGE_ROOT above: without it every test
+    # shares one bucket, so a rerun against a dirty bucket sees the previous
+    # run's objects and fails. tmp_path is already unique per test.
+    monkeypatch.setattr(storage, "S3_PREFIX", f"tests/{tmp_path.name}")
 
     with TestClient(main.app) as c:  # context manager runs the lifespan
         db = TestingSession()

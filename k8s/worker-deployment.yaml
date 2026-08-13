@@ -1,0 +1,35 @@
+# No Service and no probes: it polls SQS, it does not serve.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: lecho
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      # Long enough for a job in flight to finish after SIGTERM.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: lecho:dev
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "worker.main"]
+          envFrom:
+            - configMapRef:
+                name: lecho-config
+            - secretRef:
+                name: lecho-secrets
+          # The whisper `base` model sits at roughly 1GB resident once loaded.
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 2Gi

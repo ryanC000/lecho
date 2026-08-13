@@ -33,6 +33,10 @@ BACKEND = os.getenv("STORAGE_BACKEND", BACKEND_LOCAL).upper()
 S3_BUCKET = os.getenv("S3_BUCKET", "")
 S3_REGION = os.getenv("AWS_REGION") or None
 S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL") or None
+# Namespaces one bucket across environments, and per-test under S3 (LOCAL gets
+# the same isolation from conftest's tmp_path STORAGE_ROOT). Applied only at the
+# bucket boundary — stored keys stay canonical, so changing it never rewrites a row.
+S3_PREFIX = os.getenv("STORAGE_PREFIX", "").strip("/")
 PRESIGN_EXPIRY_S = 3600
 
 CHUNK_BYTES = 1024 * 1024
@@ -64,6 +68,11 @@ class StorageResult:
     backend: str      # BACKEND_LOCAL now, BACKEND_S3 later
     size_bytes: int
     sha256: str
+
+
+def _s3key(key: str) -> str:
+    """The canonical key as addressed in the bucket (see S3_PREFIX)."""
+    return f"{S3_PREFIX}/{key}" if S3_PREFIX else key
 
 
 def upload_key(asset_id: str, ext: str = "wav") -> str:
@@ -99,7 +108,7 @@ def save_upload(file_obj, key: str) -> StorageResult:
         with tempfile.SpooledTemporaryFile(max_size=CHUNK_BYTES) as buf:
             size, digest = _stream_hash(file_obj, buf)
             buf.seek(0)
-            _s3().put_object(Bucket=S3_BUCKET, Key=key, Body=buf)
+            _s3().put_object(Bucket=S3_BUCKET, Key=_s3key(key), Body=buf)
         return StorageResult(key=key, backend=BACKEND_S3, size_bytes=size, sha256=digest)
 
     dest = STORAGE_ROOT / key
@@ -135,7 +144,7 @@ def get_path(key: str) -> Path:
         fd, name = tempfile.mkstemp(suffix=Path(key).suffix)
         os.close(fd)
         with open(name, "wb") as out:
-            _s3().download_fileobj(S3_BUCKET, key, out)
+            _s3().download_fileobj(S3_BUCKET, _s3key(key), out)
         path = _TempPath(name)
         weakref.finalize(path, _unlink, name)
         return path
@@ -148,7 +157,7 @@ def exists(key: str) -> bool:
         from botocore.exceptions import ClientError
 
         try:
-            _s3().head_object(Bucket=S3_BUCKET, Key=key)
+            _s3().head_object(Bucket=S3_BUCKET, Key=_s3key(key))
             return True
         except ClientError as exc:
             if exc.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
@@ -162,7 +171,7 @@ def open_read(key: str):
     hands the stream to) is responsible for closing it. (S3: streaming GET.)
     """
     if BACKEND == BACKEND_S3:
-        return _s3().get_object(Bucket=S3_BUCKET, Key=key)["Body"]
+        return _s3().get_object(Bucket=S3_BUCKET, Key=_s3key(key))["Body"]
     return open(STORAGE_ROOT / key, "rb")
 
 
@@ -176,7 +185,7 @@ def audio_response(key: str, media_type: str = "audio/wav"):
     if BACKEND == BACKEND_S3:
         url = _s3().generate_presigned_url(
             "get_object",
-            Params={"Bucket": S3_BUCKET, "Key": key, "ResponseContentType": media_type},
+            Params={"Bucket": S3_BUCKET, "Key": _s3key(key), "ResponseContentType": media_type},
             ExpiresIn=PRESIGN_EXPIRY_S,
         )
         return RedirectResponse(url)
@@ -190,7 +199,7 @@ def save_text(text: str, key: str) -> str:
     the key so callers can store it on the row that references it.
     """
     if BACKEND == BACKEND_S3:
-        _s3().put_object(Bucket=S3_BUCKET, Key=key, Body=text.encode("utf-8"))
+        _s3().put_object(Bucket=S3_BUCKET, Key=_s3key(key), Body=text.encode("utf-8"))
         return key
 
     dest = STORAGE_ROOT / key
@@ -205,7 +214,7 @@ def read_text(key: str) -> str:
     Symmetric with save_text, behind the same seam. (S3: streaming GET → decode.)
     """
     if BACKEND == BACKEND_S3:
-        with _s3().get_object(Bucket=S3_BUCKET, Key=key)["Body"] as body:
+        with _s3().get_object(Bucket=S3_BUCKET, Key=_s3key(key))["Body"] as body:
             return body.read().decode("utf-8")
     return (STORAGE_ROOT / key).read_text(encoding="utf-8")
 
@@ -224,7 +233,7 @@ def alignment_key(practice_id: int) -> str:
 
 def delete(key: str) -> None:
     if BACKEND == BACKEND_S3:
-        _s3().delete_object(Bucket=S3_BUCKET, Key=key)
+        _s3().delete_object(Bucket=S3_BUCKET, Key=_s3key(key))
         return
 
     path = STORAGE_ROOT / key

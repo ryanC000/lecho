@@ -15,3 +15,9 @@ psycopg[binary]     # PostgreSQL driver for the deployed DATABASE_URL (SQLite ne
 boto3               # S3 storage backend (STORAGE_BACKEND=S3); unused when running on local disk
 scipy               # Butterworth bandpass in the ambient-noise pipeline (dsp/noise.py)
 noisereduce         # spectral noise reduction; pulls matplotlib/pillow (~50MB) as transitive deps
+# Content-gate STT, used only by CONTENT_GATE_BACKEND=INPROCESS (the containers).
+# The `stt` conda quarantine exists for the dev box's cp314, which has no wheel;
+# the marker keeps this line from breaking `pip install` there. Containers are
+# cp312 and MUST get it — without it the gate fails open and the deployed app
+# scores gibberish as a valid take.
+faster-whisper; python_version < "3.13"

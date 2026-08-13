@@ -12,8 +12,22 @@
 #   docker compose exec app python -m tools.seed          # practices + dev login
 #   docker compose exec app python -m tools.ingest_native  # native clips (needs sources)
 #
-# The worker still runs in-process inside the app container; splitting it into
-# its own service is ticket 04.
+# By default the worker runs in-process inside the app container (INLINE), so
+# this stack stays fully offline. To exercise the real split from ticket 04,
+# put the AWS settings in a root .env and bring up the `queue` profile:
+#
+#   QUEUE_BACKEND=SQS
+#   SQS_QUEUE_URL=https://sqs.<region>.amazonaws.com/<acct>/lecho-jobs
+#   S3_ENDPOINT_URL=          # empty: real S3, not MinIO
+#   S3_BUCKET=<your-bucket>
+#   AWS_REGION=<region>
+#   AWS_ACCESS_KEY_ID=... / AWS_SECRET_ACCESS_KEY=...
+#
+#   docker compose --profile queue up --build
+#
+# That path talks to real AWS on both sides deliberately: boto3 resolves one
+# credential set per process, so MinIO's minioadmin keys and a real SQS queue
+# cannot coexist in the same container.
 
 services:
   db:
@@ -61,7 +75,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lecho:lecho@db:5432/lecho
       STORAGE_BACKEND: S3
-      S3_BUCKET: lecho
+      S3_BUCKET: ${S3_BUCKET:-lecho}
+      # INLINE keeps this stack offline; the queue profile above flips it to SQS.
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-INLINE}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL:-}
+      # The image has faster-whisper; there is no conda in a container, and the
+      # subprocess backend would fail open and silently disable the gate.
+      CONTENT_GATE_BACKEND: INPROCESS
       # KNOWN LIMITATION: this value is also what GET /practices/{id}/audio
       # presigns its redirect with, and "s3" only resolves inside this network,
       # so audio playback from a host browser fails. SigV4 signs the host
@@ -70,10 +90,12 @@ services:
       # endpoint from the API endpoint in infra/storage.py — out of scope here,
       # and moot on real S3, whose endpoint is publicly resolvable. Server-side
       # scoring, which reads through the same seam, is unaffected.
-      S3_ENDPOINT_URL: http://s3:9000
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      # `-` not `:-`: setting S3_ENDPOINT_URL to empty in .env must mean "real
+      # S3", which `:-` would override back to MinIO.
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL-http://s3:9000}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
     # Source clips for tools.ingest_native, read-only. Mounted rather than
     # copied into the image because native_audio/ is gitignored and stays that
     # way — the image holds no audio. Empty on a clone without the sources.
@@ -86,6 +108,28 @@ services:
         condition: service_healthy
       s3-init:
         condition: service_completed_successfully
+
+  # The same image with the command overridden — one build, two roles. Only
+  # started under `--profile queue`, because it has nothing to consume unless
+  # QUEUE_BACKEND=SQS. No ports: it polls, it doesn't serve.
+  worker:
+    profiles: ["queue"]
+    build: ./backend
+    command: ["python", "-m", "worker.main"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://lecho:lecho@db:5432/lecho
+      STORAGE_BACKEND: S3
+      S3_BUCKET: ${S3_BUCKET:-lecho}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-INLINE}
+      SQS_QUEUE_URL: ${SQS_QUEUE_URL:-}
+      CONTENT_GATE_BACKEND: INPROCESS
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL-http://s3:9000}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

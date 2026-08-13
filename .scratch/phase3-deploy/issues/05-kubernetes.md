@@ -18,55 +18,77 @@ The worker `Deployment` is what makes the architecture legible: scaling audio pr
 `replicas: N` on that object alone, with no effect on API capacity. That is the whole reason the
 queue in 04 exists.
 
-**Deploy target:** local `kind` or `k3s`, pointed at **real** AWS S3 and SQS. Real Kubernetes
-objects, real AWS services, zero cluster cost. EKS is deliberately not required — the manifests are
-portable, and running them on a managed cluster is a credit-card decision, not an engineering one.
-Record which cluster the verification run used.
+**Deploy target (settled): Docker Desktop Kubernetes**, pointed at **real** AWS S3 and SQS, with
+Postgres on the Supabase free tier. Real Kubernetes objects, real managed services, zero cluster
+cost. Chosen over `kind`/`k3s`/minikube for two concrete reasons on Windows:
 
-**If a hosted cluster is chosen instead of local**, the manifests do not change — only where they
-are applied. Budget for what managed k8s actually costs beyond the control plane:
+- It shares the Docker image store, so `docker build -t lecho:dev ./backend` is immediately usable
+  by the cluster with `imagePullPolicy: IfNotPresent` — no registry, no `minikube image load`, no
+  `eval $(minikube docker-env)` per shell. (Tag must not be `latest`, which implies `Always`.)
+- It binds `Service type=LoadBalancer` to `localhost`, so the Ingress answers on
+  `http://localhost` with no `minikube tunnel` and no hosts-file entry.
 
-- An `Ingress` provisions a **cloud load balancer, billed separately (~$10–12/mo)** on every
-  managed provider. This is the line people forget; "free control plane" is not a free cluster.
-- **HTTPS needs a domain.** Let's Encrypt will not issue for a bare IP, so TLS means a domain
-  (~$10/yr) plus `cert-manager`, or a wildcard-DNS service like `sslip.io` for a demo.
-- **Cross-cloud egress**: a cluster on Oracle/DigitalOcean with S3 and SQS on AWS sends every audio
-  file across the public internet — egress fees and per-job latency. Fine for a demo, wrong for
-  production, and a likely interview question.
-- **Credentials degrade off-AWS**: no IRSA, so AWS keys live in a k8s `Secret`. Acceptable only
-  with the least-privilege policy this ticket already requires.
-- **Oracle's free tier is ARM64 — now ruled out.** 03 settled the wheel check:
-  `praat-parselmouth` ships no Linux aarch64 wheel at any Python version, so an ARM node
-  would have to build Praat's C++ from source. **Pick an x86_64 cluster.**
+Its one cost: no ingress controller ships with it, so `ingress-nginx` is installed by manifest
+(the `provider/cloud` variant — its `LoadBalancer` Service is what maps to localhost). Single-node
+only, which does not matter here: `kubectl scale deploy/worker --replicas=3` schedules three pods
+on one node, and independent scaling is what this ticket demonstrates.
 
-Recommended: verify the manifests on `kind` (fast, free), then do one real cloud deploy and tear it
-down, rather than iterating against a billed cluster.
+**Deployment-specific requirements found while implementing** (each fails *silently* if missed):
 
-**Frontend hosting:** the frontend is not containerized (see 03) and is served as static files.
-Two constraints decide where:
+- **Supabase must use the session pooler** (`aws-0-<region>.pooler.supabase.com:5432`), not
+  `db.<ref>.supabase.co` — the direct endpoint is IPv6-only on the free tier and Docker Desktop
+  cannot reach it. Not the transaction pooler (6543) either: it breaks psycopg's prepared
+  statements. Add `?sslmode=require`. The free tier also pauses after 7 days idle.
+- **The S3 bucket needs a CORS policy.** `GET /practices/{id}/audio` redirects to a presigned S3
+  URL and wavesurfer fetches it cross-origin, so without one the API stays healthy while every
+  waveform fails to load.
+- **`proxy-body-size: 10m` on the Ingress.** ingress-nginx defaults to 1MB; `job_gates`
+  accepts 10MB, so takes over 1MB would 413 at the Ingress before reaching the app's own gate.
+- **Google's authorised JS origins are per-origin, including port.** `http://localhost` (the
+  Ingress) is a different origin from `http://localhost:5173` (Vite) and must be registered too —
+  ticket 24.
+- Port 80 on Windows is often held by IIS / the World Wide Web Publishing Service; the controller's
+  EXTERNAL-IP stays `<pending>` if so.
+
+**Not chosen — a hosted cluster.** The manifests are portable and would not change, but an
+`Ingress` provisions a **billed load balancer (~$10–12/mo)** on every managed provider, HTTPS needs
+a domain (~$10/yr) plus `cert-manager`, and a non-AWS cluster ships every audio file across the
+public internet to S3. Oracle's free tier is additionally ruled out by 03's wheel check:
+`praat-parselmouth` publishes no Linux aarch64 wheel, so an ARM node would have to build Praat's
+C++ from source. **x86_64 only.**
+
+**Frontend hosting (settled): an nginx pod in-cluster, behind the same Ingress as the API.**
+Two constraints decided it:
 
 1. **A publicly hosted frontend cannot reach a laptop cluster.** A bundle on Netlify/CloudFront
-   loads fine, then fails every API call, because `kind`/`k3s` has no public address.
+   loads fine, then fails every API call, because the cluster has no public address.
 2. **Static hosts serve HTTPS by default**, and browsers block HTTPS pages calling HTTP APIs as
-   mixed content — so even a reachable cluster needs TLS on the Ingress.
+   mixed content — so even a reachable cluster would need TLS on the Ingress.
 
-That leaves three coherent shapes: **local demo** (frontend on localhost against the local
-Ingress — recommended, $0, and enough to demonstrate the architecture); **tunneled** (`cloudflared`
-gives the local cluster a public HTTPS URL, so a hosted frontend works); or **fully public**
-(hosted cluster with TLS + frontend on S3/CloudFront). All three need ticket 15 first.
+Serving both from one Ingress sidesteps both: the browser makes **no cross-origin request at all**,
+so CORS and mixed content stop being deployment concerns. It also keeps the bundle portable —
+built with `VITE_API_BASE=""` it emits relative URLs and is pinned to no hostname. The SPA's routes
+(`/library`, `/history`, `/practice/:id`, `/results/:jobId`) do not collide with the API's
+(`/practices`, `/auth`, `/jobs`, `/health`), so path prefixes route it with no rewrite rules.
 
-**AWS resources needed:** an S3 bucket, an SQS queue + DLQ, and an IAM user/policy scoped to
-exactly those two ARNs. Create them however is fastest — console is fine. A ~40-line Terraform
-file is optional and worth it only for `terraform destroy`, which is the reliable way to avoid
-leaving billable resources running after a demo. Either way: no credentials, real `.tfvars`, or
-state files in git, and the k8s `Secret` holding the AWS keys must not be committed with real
-values (ship a `.example` and document the `kubectl create secret` command).
+Public reachability (a `cloudflared` tunnel, or a hosted cluster with TLS) was considered and
+declined: it requires the laptop to be on to be worth anything, and a free tunnel's random URL
+breaks Google sign-in, which needs an exact pre-registered origin.
 
-**Blocked by:** 03 (images), 04 (the worker split and queue this deploys). Master-plan ticket 15
-(env-config) is a soft prerequisite — the frontend cannot point at a deployed API until `API_BASE`
-and the CORS origins come from env vars.
+**AWS resources needed:** an S3 bucket (+ a CORS rule), an SQS queue + DLQ with a redrive policy,
+and an IAM user/policy scoped to exactly those two ARNs. Created by console — full checklist and a
+teardown checklist in `k8s/README.md`. **Terraform was considered and dropped:** its value is
+reproducibility, and four resources created once for a laptop demo do not need reproducing.
+(Kubernetes cannot provision them either — that needs Crossplane or ACK, far more machinery than
+the four resources it would manage.) No credentials in git; the `Secret` is created out-of-band
+from a documented command and only a `.example` is committed.
 
-**Status:** blocked
+**Blocked by:** nothing — 03 (images) and 04 are both done. Master-plan ticket 15 (env-config) was
+listed as a soft prerequisite and is **done** (`be990fb`).
+
+**Status:** ready-for-human — manifests in `k8s/`, runbook in `k8s/README.md`; **none of the
+acceptance criteria below have been run**. They need a live cluster plus AWS/Supabase accounts
+that do not exist yet, so every box is still open on purpose.
 
 - [ ] `kubectl apply -k k8s/` brings up API and worker Deployments; both reach `Running`
 - [ ] API is reachable through the Service/Ingress and serves `/`
@@ -75,6 +97,13 @@ and the CORS origins come from env vars.
 - [ ] `kubectl scale deploy/worker --replicas=3` adds consumers without touching the API
 - [ ] Config comes entirely from ConfigMap/Secret — no image rebuild to change bucket or queue
 - [ ] No secrets committed; the Secret is created out-of-band from a documented command
+- [ ] Frontend served from the same Ingress; SPA deep links survive a refresh (`try_files`)
+- [ ] A practice's **waveform renders** in the browser — the only thing that proves the bucket's
+      CORS rule is right, since a missing one leaves the API perfectly healthy
+
+**Owner-run steps** (console work and a live cluster): enable Kubernetes in Docker Desktop, install
+`ingress-nginx`, create the AWS + Supabase resources, register `http://localhost` with the OAuth
+client (24), then walk `k8s/README.md` §3–§6.
 
 ## Dropped from the original scope
 

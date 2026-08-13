@@ -1,0 +1,8 @@
+# The build context is frontend/. node_modules is reinstalled inside the image
+# (Linux binaries, not the host's), and dist is rebuilt — copying either in
+# would be slow and would risk shipping a stale bundle.
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local

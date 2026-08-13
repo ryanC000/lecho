@@ -1,0 +1,19 @@
+# Non-secret config; edit S3_BUCKET / SQS_QUEUE_URL / AWS_REGION to match AWS.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lecho-config
+  namespace: lecho
+data:
+  STORAGE_BACKEND: "S3"
+  S3_BUCKET: "lecho-CHANGEME"
+  AWS_REGION: "us-east-1"
+
+  QUEUE_BACKEND: "SQS"
+  SQS_QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/CHANGEME/lecho-jobs"
+
+  # No conda in the container, so SUBPROCESS would fail open and disable the gate.
+  CONTENT_GATE_BACKEND: "INPROCESS"
+
+  # Unused in practice: the Ingress puts the bundle and the API on one origin.
+  CORS_ORIGINS: "http://localhost"

@@ -23,6 +23,7 @@ high WER rejects.
 Run standalone to calibrate the threshold on a take:
     python -m domain.content_gate path/to/take.wav "Hier soir, j'ai vu le film..."
 """
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +34,14 @@ from domain.text_normalize import normalize_transcript
 # backend venv, per the wheel rule); assess() shells out via `conda run`.
 STT_ENV = "stt"
 _RUNNER = Path(__file__).resolve().parent.parent / "tools" / "stt" / "stt_runner.py"
+
+# How the recognizer is reached. SUBPROCESS (default) is the dev box's conda
+# quarantine; INPROCESS imports faster-whisper directly and is what containers
+# set — an image has no conda, so the subprocess path would fail open there and
+# silently disable the gate in the deployed app.
+BACKEND_SUBPROCESS = "SUBPROCESS"
+BACKEND_INPROCESS = "INPROCESS"
+BACKEND = os.getenv("CONTENT_GATE_BACKEND", BACKEND_SUBPROCESS).upper()
 
 # Max word-error rate (recognized vs practice transcript) still judged
 # intelligible. Graduated on the gibberish-vs-correct calibration set (ticket 22,
@@ -91,19 +100,11 @@ def decide(wer: float | None) -> bool:
     return wer <= CONTENT_GATE_MAX_WER
 
 
-def assess(user_wav_path, transcript: str) -> ContentGateResult:
-    """Recognize the take's words and judge intelligibility by WER.
+class SttUnavailable(Exception):
+    """The recognizer could not run at all — the gate fails open on this."""
 
-    Fails open (assessed=False) on any STT infrastructure failure — a missing
-    conda env, a subprocess error, a timeout, a non-zero exit — so a broken
-    recognizer degrades to "score anyway", never to "block every practice". A
-    successful recognition that yields *no* words is not an infra failure: it
-    means the line wasn't spoken, so WER is 1.0 and the take is rejected.
-    """
-    ref = normalize_transcript(transcript)
-    if not ref:
-        return ContentGateResult(False, True, None, "empty transcript")
 
+def _recognize_subprocess(user_wav_path) -> str:
     try:
         proc = subprocess.run(
             ["conda", "run", "-n", STT_ENV, "python", str(_RUNNER),
@@ -114,11 +115,46 @@ def assess(user_wav_path, transcript: str) -> ContentGateResult:
             env=_utf8_env(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return ContentGateResult(False, True, None, f"STT did not run: {exc}")
+        raise SttUnavailable(f"STT did not run: {exc}") from exc
     if proc.returncode != 0:
-        return ContentGateResult(False, True, None, "STT recognition failed")
+        raise SttUnavailable("STT recognition failed")
+    return proc.stdout
 
-    hyp = normalize_transcript(proc.stdout)
+
+def _recognize_inprocess(user_wav_path) -> str:
+    # Imported here, not at module scope: the backend venv on the dev box has no
+    # faster-whisper, and only the INPROCESS path is allowed to need it.
+    try:
+        from tools.stt.stt_runner import transcribe
+
+        return transcribe(str(user_wav_path))
+    except Exception as exc:  # missing wheel, corrupt model, decode failure
+        raise SttUnavailable(f"STT did not run: {exc}") from exc
+
+
+def assess(user_wav_path, transcript: str) -> ContentGateResult:
+    """Recognize the take's words and judge intelligibility by WER.
+
+    Fails open (assessed=False) on any STT infrastructure failure — a missing
+    conda env, a subprocess error, a timeout, a non-zero exit, an absent
+    faster-whisper — so a broken recognizer degrades to "score anyway", never to
+    "block every practice". A successful recognition that yields *no* words is
+    not an infra failure: it means the line wasn't spoken, so WER is 1.0 and the
+    take is rejected.
+    """
+    ref = normalize_transcript(transcript)
+    if not ref:
+        return ContentGateResult(False, True, None, "empty transcript")
+
+    recognize = (
+        _recognize_inprocess if BACKEND == BACKEND_INPROCESS else _recognize_subprocess
+    )
+    try:
+        raw = recognize(user_wav_path)
+    except SttUnavailable as exc:
+        return ContentGateResult(False, True, None, str(exc))
+
+    hyp = normalize_transcript(raw)
     wer = word_error_rate(ref, hyp)
     passed = decide(wer)
     return ContentGateResult(True, passed, wer,
@@ -126,8 +162,6 @@ def assess(user_wav_path, transcript: str) -> ContentGateResult:
 
 
 def _utf8_env() -> dict:
-    import os
-
     return {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 

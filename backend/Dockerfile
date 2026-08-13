@@ -20,13 +20,22 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Fail the build, not the first request, if a wheel is missing for this platform.
 # parselmouth is the fragile one (it does not publish for every architecture);
 # the rest are here because a source build of scipy/psycopg on a slim image
-# would fail at runtime in a much less obvious way.
-RUN python -c "import parselmouth, numpy, scipy, noisereduce, psycopg, boto3"
+# would fail at runtime in a much less obvious way. faster_whisper is checked
+# because the content gate fails *open* — a missing wheel would not raise at
+# runtime, it would silently disable the gate.
+RUN python -c "import parselmouth, numpy, scipy, noisereduce, psycopg, boto3, faster_whisper"
+
+# Pre-download the STT model (~140MB) so a worker pod does not fetch it from
+# HuggingFace on its first job — that turns a cold start into a timeout, and a
+# scaled-up Deployment into N simultaneous downloads.
+ENV HF_HOME=/opt/models
+RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8')"
 
 COPY . ./
 
 EXPOSE 8000
 
-# The worker still runs in-process (BackgroundTasks) at this stage; the split
-# into its own service is ticket 04.
+# Default entrypoint is the API. The worker is the same image with the command
+# overridden (compose service / k8s Deployment): one build, two roles.
+#   python -m worker.main
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
