@@ -5,18 +5,16 @@ root (never the dev lecho.db): register → login → solo job on a synthetic
 clip identical to the practice's native → the worker runs inline under
 TestClient → SUCCESS with near-100 score and per-axis sub-scores. Plus the
 ingestion gates and auth/ownership rejections.
-
-Assertions for logout revocation activate with their tickets (master-plan 13) —
-add them here when those land.
 """
 import json
 import wave
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
-from api import security
+from api import main, security
 from infra import database, models, storage
 from worker import core as worker_core
 from conftest import NATIVE_DURATION_S
@@ -354,6 +352,45 @@ def test_job_history_requires_auth(client):
     assert client.get("/jobs").status_code == 401
 
 
+# --- Per-take duration (master-plan ticket 26) ------------------------------
+
+def test_job_history_exposes_the_takes_recorded_duration(client):
+    headers = _auth_headers(client)
+    job_id = _post_job(client, headers, client.native_wav.read_bytes(), NATIVE_DURATION_S).json()["id"]
+
+    row = client.get("/jobs", headers=headers).json()["jobs"][0]
+
+    assert row["id"] == job_id
+    # The server-derived asset duration, not the client-reported form field.
+    assert row["duration_seconds"] == pytest.approx(NATIVE_DURATION_S, abs=0.05)
+
+
+def test_job_history_duration_is_null_when_the_take_never_stored(client):
+    # A job rejected by a gate is persisted FAILED but its asset never is, so
+    # the join has nothing to find.
+    headers = _auth_headers(client)
+    ids = _seed_jobs(client, "tester@example.com", [("FAILED", None)])
+
+    row = client.get("/jobs", headers=headers).json()["jobs"][0]
+
+    assert row["id"] == ids[0]
+    assert row["duration_seconds"] is None
+
+
+def test_job_history_durations_survive_pagination(client):
+    # One grouped lookup backs the page: every row must still get its own
+    # duration, not the first row's or none at all.
+    headers = _auth_headers(client)
+    wav = client.native_wav.read_bytes()
+    _post_job(client, headers, wav, NATIVE_DURATION_S)
+    _post_job(client, headers, wav, NATIVE_DURATION_S)
+
+    page = client.get("/jobs?limit=1&offset=1", headers=headers).json()["jobs"]
+
+    assert len(page) == 1
+    assert page[0]["duration_seconds"] == pytest.approx(NATIVE_DURATION_S, abs=0.05)
+
+
 # --- Word alignment (master-plan tickets 05/06, PRD 8.4) --------------------
 
 _WORDS = [
@@ -537,6 +574,50 @@ def test_login_wrong_password_rejected(client):
     _auth_headers(client)
     r = client.post("/auth/login", data={"username": "tester@example.com", "password": "wrong"})
     assert r.status_code == 401
+
+
+# --- Logout / token revocation ----------------------------------------------
+
+def test_logout_revokes_the_presented_token(client):
+    headers = _auth_headers(client)
+    assert client.get("/jobs", headers=headers).status_code == 200
+
+    assert client.post("/auth/logout", headers=headers).status_code == 204
+
+    # Same token, same route: now rejected.
+    assert client.get("/jobs", headers=headers).status_code == 401
+    # And it cannot be revoked twice.
+    assert client.post("/auth/logout", headers=headers).status_code == 401
+
+
+def test_logout_leaves_other_sessions_alone(client):
+    first = _auth_headers(client)
+    r = client.post("/auth/login", data={"username": "tester@example.com", "password": PASSWORD})
+    second = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    assert client.post("/auth/logout", headers=first).status_code == 204
+
+    assert client.get("/jobs", headers=second).status_code == 200
+
+
+def test_startup_purges_only_expired_revocations(client):
+    db = database.SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        db.add(models.RevokedToken(jti="expired", expires_at=now - timedelta(minutes=1)))
+        db.add(models.RevokedToken(jti="live", expires_at=now + timedelta(minutes=30)))
+        db.commit()
+    finally:
+        db.close()
+
+    with TestClient(main.app):  # re-runs the lifespan against the same temp DB
+        pass
+
+    db = database.SessionLocal()
+    try:
+        assert {r.jti for r in db.query(models.RevokedToken)} == {"live"}
+    finally:
+        db.close()
 
 
 # --- Google sign-in ---------------------------------------------------------

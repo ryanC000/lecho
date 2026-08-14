@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 
 /**
  * Follow-along transcript that lights up the word currently being spoken in the

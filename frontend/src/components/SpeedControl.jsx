@@ -1,5 +1,3 @@
-import React from 'react';
-
 const speeds = [
   { label: '0.5×', value: 0.5 },
   { label: '0.75×', value: 0.75 },

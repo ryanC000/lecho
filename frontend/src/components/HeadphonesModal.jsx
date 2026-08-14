@@ -1,4 +1,3 @@
-import React from 'react';
 import { SketchButton } from './core/SketchButton';
 
 // Headphones confirmation before the first shadow take of the session

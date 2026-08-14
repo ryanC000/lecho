@@ -4,12 +4,29 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `npm run lint` exits 0 on a clean tree
-- [ ] The `AuthModal` setState-in-effect finding is actually fixed, not suppressed with a disable comment
-- [ ] `npm test` and `npm run build` still green afterwards
-- [ ] No behaviour change — this is deletions and eslint config only, apart from the AuthModal fix
+- [x] `npm run lint` exits 0 on a clean tree
+- [x] The `AuthModal` setState-in-effect finding is actually fixed, not suppressed with a disable comment
+- [x] `npm test` and `npm run build` still green afterwards
+- [x] No behaviour change — this is deletions and eslint config only
+
+Done 2026-08-14. Cleared all 27 errors: 15 unused `React` default imports (`App.jsx`
+and `SketchButton.jsx` keep theirs — they call `React.useState`), 5 `catch (err)` →
+`catch {}` in `useRecorder.js`, the dead `extent()` in `PitchChart.jsx`, and the dead
+`id` in `Practice.jsx` (which orphaned `useParams` from its import). The 5 `'global'
+is not defined` errors are fixed in `eslint.config.js` with a second config block
+adding `globals.node` for `**/*.test.{js,jsx}` and `src/test/**` rather than per-file
+disables. Also removed the stale `exhaustive-deps` disable in `useRecorder.js`
+(trivial, and it was one of the 3 warnings). Two `exhaustive-deps` warnings remain by
+design — they'd need hook restructuring. Lint now exits 0; `npm test` 48/48 and
+`npm run build` green.
+
+The `AuthModal` setState-in-effect needed no work: it was the field-reset effect at
+line 18 as of `e18f99b`, and `682ab67` already removed it properly — `App.jsx:96`
+keys the modal on `open`+`mode` so a remount gives a fresh form. No disable comment
+was involved. That line 18 now holds unrelated code is why the finding no longer
+appears in lint output.
 
 ## Notes
 

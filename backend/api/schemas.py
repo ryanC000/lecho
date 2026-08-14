@@ -61,6 +61,8 @@ class JobListItem(BaseModel):
     status: str
     score: Optional[float] = None
     mode: str = "solo"
+    # Null when the take was rejected before its asset was stored.
+    duration_seconds: Optional[float] = None
     created_at: datetime
 
 class JobListResponse(BaseModel):

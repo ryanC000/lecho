@@ -129,7 +129,20 @@ def list_jobs(
         .limit(limit)
         .all()
     )
-    return {"jobs": [job_list_item(job) for job in jobs], "total": query.count()}
+    # One lookup for the page's takes: a job rejected before storage has no
+    # asset, so its duration stays absent.
+    durations = dict(
+        db.query(models.AudioAsset.job_id, models.AudioAsset.duration_seconds)
+        .filter(
+            models.AudioAsset.job_id.in_([job.id for job in jobs]),
+            models.AudioAsset.role == "USER_RECORDING",
+        )
+        .all()
+    )
+    return {
+        "jobs": [job_list_item(job, durations.get(job.id)) for job in jobs],
+        "total": query.count(),
+    }
 
 
 @router.get("/jobs/{job_id}", response_model=schemas.JobStatusResponse)

@@ -7,7 +7,7 @@ import Practice from './pages/Practice';
 import Results from './pages/Results';
 import AuthModal from './components/AuthModal';
 import { SketchButton } from './components/core/SketchButton';
-import { isLoggedIn, clearToken } from './api/auth';
+import { isLoggedIn, logout } from './api/auth';
 import { apiGet } from './api/client';
 import './index.css';
 
@@ -71,7 +71,7 @@ function Layout() {
         </div>
         <div className="auth-actions">
           {loggedIn ? (
-            <SketchButton variant="secondary" size="sm" onClick={() => clearToken()}>
+            <SketchButton variant="secondary" size="sm" onClick={() => logout()}>
               Log out
             </SketchButton>
           ) : (

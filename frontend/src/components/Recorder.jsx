@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import LiveWaveform from './LiveWaveform';
 import TranscriptKaraoke from './TranscriptKaraoke';
 import HeadphonesModal from './HeadphonesModal';

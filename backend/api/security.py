@@ -70,6 +70,29 @@ def verify_google_id_token(credential: str) -> dict:
     )
 
 
+def revoke_token(token: str, db: Session) -> None:
+    """Record the token's jti so get_current_user rejects it from here on.
+
+    The row expires with the token: once the JWT's own exp has passed it is
+    rejected on signature checking alone, so the revocation is dead weight.
+    """
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    db.add(models.RevokedToken(
+        jti=payload["jti"],
+        expires_at=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+    ))
+    db.commit()
+
+
+def purge_expired_revocations(db: Session) -> int:
+    """Delete revocation rows whose token has expired anyway. Returns the count."""
+    deleted = db.query(models.RevokedToken).filter(
+        models.RevokedToken.expires_at < datetime.now(timezone.utc)
+    ).delete(synchronize_session=False)
+    db.commit()
+    return deleted
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

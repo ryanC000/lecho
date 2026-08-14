@@ -76,6 +76,17 @@ def google_login(payload: schemas.GoogleCredential, db: Session = Depends(databa
     return _issue_token(user)
 
 
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    token: str = Depends(security.oauth2_scheme),
+    current_user: models.User = Depends(security.get_current_user),
+    db: Session = Depends(database.get_db),
+):
+    """Revoke the presented token. get_current_user has already turned away
+    invalid and already-revoked tokens, so the jti insert cannot collide."""
+    security.revoke_token(token, db)
+
+
 def _issue_token(user):
     access_token_expires = timedelta(minutes=security.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(

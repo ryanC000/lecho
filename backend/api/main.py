@@ -14,8 +14,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api import security
 from api.routes import auth, health, jobs, practices
-from infra import logs, migrations, models
+from infra import database, logs, migrations, models
 from infra.database import engine
 
 
@@ -26,6 +27,12 @@ async def lifespan(app: FastAPI):
     logs.configure()
     models.Base.metadata.create_all(bind=engine)
     migrations.run(engine)
+    # Housekeeping: revocations of already-expired tokens are dead weight.
+    db = database.SessionLocal()
+    try:
+        security.purge_expired_revocations(db)
+    finally:
+        db.close()
     yield
 
 

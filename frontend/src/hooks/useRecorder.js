@@ -48,7 +48,7 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
       try {
         const res = await fetch(nativeAudioUrl);
         nativeBuffer = await ctx.decodeAudioData(await res.arrayBuffer());
-      } catch (err) {
+      } catch {
         setError('Could not load the native clip for shadowing. Please try again.');
         releaseMic();
         return;
@@ -125,7 +125,7 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
         });
       }, 1000);
 
-    } catch (err) {
+    } catch {
       setError("Microphone access denied or unavailable.");
       releaseMic();
     }
@@ -152,7 +152,7 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
     clearInterval(timerRef.current);
     clearInterval(autoStopRef.current);
     if (nativeSourceRef.current) {
-      try { nativeSourceRef.current.stop(); } catch (err) { /* already ended */ }
+      try { nativeSourceRef.current.stop(); } catch { /* already ended */ }
       nativeSourceRef.current = null;
     }
     setShadowTime(null);
@@ -167,7 +167,7 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
     setAnalyser(null);
     clearInterval(autoStopRef.current);
     if (nativeSourceRef.current) {
-      try { nativeSourceRef.current.stop(); } catch (err) { /* already ended */ }
+      try { nativeSourceRef.current.stop(); } catch { /* already ended */ }
       nativeSourceRef.current = null;
     }
     if (streamRef.current) {
@@ -212,7 +212,7 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
       }
 
       onUpload(wavBlob, durationInSeconds, takeModeRef.current);
-    } catch (err) {
+    } catch {
       setError('Could not process the recording. Please try again.');
     } finally {
       setIsProcessing(false);
@@ -226,7 +226,6 @@ export default function useRecorder({ nativeDuration, nativeAudioUrl, onUpload }
       clearInterval(timerRef.current);
       releaseMic();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

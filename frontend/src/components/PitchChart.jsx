@@ -1,4 +1,3 @@
-import React from 'react';
 import { SEGMENT_PITCH_THRESHOLD_SEMITONES } from '../constants/gates';
 
 /**
@@ -57,19 +56,6 @@ const PAUSE_S = 0.15;
 const VB_W = 1000;
 const VB_H = 320;
 const PAD = { left: 12, right: 12, top: 16, bottom: 40 };
-
-/** min/max of an array via reduce (avoids Math.min(...spread) stack limits on
- *  the ~1500-point archives). Returns null for an empty array. */
-function extent(values) {
-  if (values.length === 0) return null;
-  let lo = values[0];
-  let hi = values[0];
-  for (const v of values) {
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  }
-  return [lo, hi];
-}
 
 /** Linear-interpolated percentile of a *sorted* array (p in [0,100]). */
 function percentile(sorted, p) {

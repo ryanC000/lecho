@@ -1,5 +1,3 @@
-import React from 'react';
-
 // Filter-pill row, shared by Dashboard and Library.
 export default function LevelFilter({ levels, activeLevel, onChange }) {
   return (

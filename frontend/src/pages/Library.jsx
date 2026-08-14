@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useLoaderData } from 'react-router-dom';
 import { LEVELS, LEVEL_COLORS } from '../constants/levels';
 import LevelFilter from '../components/LevelFilter';

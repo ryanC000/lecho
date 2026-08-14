@@ -14,6 +14,41 @@ const MASTERY_THRESHOLD = 70;
 // Bounds client-side per-clip aggregation until a backend summary endpoint
 // exists (see .scratch/dashboard-redesign/issues/01).
 const RECENT_JOBS_LIMIT = 100;
+const WEEK_DAYS = 7;
+// Tallest bar, leaving the column room for its value label and weekday.
+const BAR_MAX_PX = 110;
+
+/** The trailing week as local day buckets, oldest first, each holding the
+ * minutes recorded that day. Takes rejected before storage have no duration. */
+function weeklyMinutes(takes) {
+  const days = [];
+  for (let i = WEEK_DAYS - 1; i >= 0; i--) {
+    const day = new Date();
+    day.setDate(day.getDate() - i);
+    day.setHours(0, 0, 0, 0);
+    days.push({
+      key: day.getTime(),
+      label: day.toLocaleDateString(undefined, { weekday: 'narrow' }),
+      seconds: 0,
+    });
+  }
+  const byDay = new Map(days.map((day) => [day.key, day]));
+  for (const take of takes) {
+    if (take.duration_seconds == null) continue;
+    const day = new Date(take.created_at);
+    day.setHours(0, 0, 0, 0);
+    const bucket = byDay.get(day.getTime());
+    if (bucket) bucket.seconds += take.duration_seconds;
+  }
+  return days.map((day) => ({ ...day, minutes: Math.round(day.seconds / 60) }));
+}
+
+function shadowedMinutes(takes) {
+  const seconds = takes
+    .filter((take) => take.mode === 'shadow' && take.duration_seconds != null)
+    .reduce((total, take) => total + take.duration_seconds, 0);
+  return Math.round(seconds / 60);
+}
 
 function scoreColor(score) {
   if (score >= 75) return 'var(--color-accent-sage)';
@@ -45,7 +80,7 @@ function LastTakePanel({ lastTake, signedOut }) {
   );
 }
 
-function StatNotes({ ready, clipsOpen, clipsMastered }) {
+function StatNotes({ ready, clipsOpen, clipsMastered, shadowMinutes }) {
   return (
     <div className="stat-notes">
       <div className="stat-note">
@@ -53,7 +88,7 @@ function StatNotes({ ready, clipsOpen, clipsMastered }) {
         <div className="stat-note-label">clips open</div>
       </div>
       <div className="stat-note">
-        <div className="stat-note-value">—</div>
+        <div className="stat-note-value">{ready ? shadowMinutes : '—'}</div>
         <div className="stat-note-label">min shadowed</div>
       </div>
       <div className="stat-note">
@@ -164,11 +199,37 @@ function ContinueShadowingPanel({ activeLevel, filtered, latestScoreByPractice }
   );
 }
 
-function BottomRow({ recentTakes, signedOut }) {
+function WeekChart({ days }) {
+  const peak = Math.max(...days.map((day) => day.minutes));
+  return (
+    <div className="week-chart">
+      {days.map((day) => {
+        const isPeak = peak > 0 && day.minutes === peak;
+        return (
+          <div className="week-bar-col" key={day.key}>
+            <div
+              className={`week-bar${isPeak ? ' is-peak' : ''}`}
+              style={{ height: `${peak > 0 ? Math.max((day.minutes / peak) * BAR_MAX_PX, 3) : 3}px` }}
+            >
+              {day.minutes > 0 && <span className="week-bar-value">{day.minutes}</span>}
+            </div>
+            <div className={`week-bar-day${isPeak ? ' is-peak' : ''}`}>{day.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BottomRow({ recentTakes, weekDays, signedOut }) {
   return (
     <div className="dashboard-bottom-row">
       <SketchPanel label="minutes this week">
-        <div className="week-placeholder">Minutes tracking is coming soon.</div>
+        {signedOut ? (
+          <p className="last-take-empty">Log in to see your minutes.</p>
+        ) : (
+          <WeekChart days={weekDays} />
+        )}
       </SketchPanel>
 
       <SketchPanel label="recent takes">
@@ -215,8 +276,12 @@ function NewClipsBanner() {
 /** Owner-scoped job history, same reasoning as History.jsx: fetched here
  * rather than through the route loader, which only ever calls unauthenticated apiGet. */
 function useJobHistory() {
+  // `jobs` is the scored subset the score-driven panels read; `takes` keeps
+  // every row, since minutes practiced counts a take whether or not it scored.
   const [state, setState] = useState(() => (
-    isLoggedIn() ? { status: 'loading', jobs: [] } : { status: 'signed-out', jobs: [] }
+    isLoggedIn()
+      ? { status: 'loading', jobs: [], takes: [] }
+      : { status: 'signed-out', jobs: [], takes: [] }
   ));
 
   useEffect(() => {
@@ -226,9 +291,9 @@ function useJobHistory() {
       .then((res) => res.json())
       .then((body) => {
         if (cancelled) return;
-        setState({ status: 'ready', jobs: body.jobs.filter((j) => j.score != null) });
+        setState({ status: 'ready', jobs: body.jobs.filter((j) => j.score != null), takes: body.jobs });
       })
-      .catch(() => { if (!cancelled) setState({ status: 'error', jobs: [] }); });
+      .catch(() => { if (!cancelled) setState({ status: 'error', jobs: [], takes: [] }); });
     return () => { cancelled = true; };
   }, []);
 
@@ -270,6 +335,7 @@ export default function Dashboard() {
   }
   const clipsMastered = [...latestScoreByPractice.values()].filter((s) => s >= MASTERY_THRESHOLD).length;
   const clipsOpen = latestScoreByPractice.size - clipsMastered;
+  const weekDays = weeklyMinutes(jobsState.takes);
 
   const filtered = activeLevel === 'All'
     ? practices
@@ -279,14 +345,19 @@ export default function Dashboard() {
     <div className="dashboard-grid">
       <div className="dashboard-rail">
         <LastTakePanel lastTake={lastTake} signedOut={signedOut} />
-        <StatNotes ready={jobsState.status === 'ready'} clipsOpen={clipsOpen} clipsMastered={clipsMastered} />
+        <StatNotes
+          ready={jobsState.status === 'ready'}
+          clipsOpen={clipsOpen}
+          clipsMastered={clipsMastered}
+          shadowMinutes={shadowedMinutes(jobsState.takes)}
+        />
         <PerformancePanel detail={lastTakeDetail} signedOut={signedOut} />
       </div>
 
       <div className="dashboard-main">
         <LevelFilterInk levels={LEVELS} activeLevel={activeLevel} onChange={setActiveLevel} />
         <ContinueShadowingPanel activeLevel={activeLevel} filtered={filtered} latestScoreByPractice={latestScoreByPractice} />
-        <BottomRow recentTakes={jobs.slice(0, 4)} signedOut={signedOut} />
+        <BottomRow recentTakes={jobs.slice(0, 4)} weekDays={weekDays} signedOut={signedOut} />
         <NewClipsBanner />
       </div>
     </div>

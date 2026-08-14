@@ -18,11 +18,12 @@ bundle itself isn't checked into the repo.
   dashboard's.
 - New `--color-ink-mid` (#6B5C4A) and `--shadow-sticker` tokens in `index.css`.
 
+**Landed since:**
+- "minutes this week" bar chart and the "min shadowed" stat note are live off
+  `JobListItem.duration_seconds` (master-plan ticket 26, done 2026-08-14) —
+  placeholders removed.
+
 **Deferred — no data source exists yet:**
-- "minutes this week" bar chart and the "min shadowed" stat note both need
-  per-take audio duration, which no endpoint currently exposes. Both render a
-  placeholder in the UI. Tracked as `.scratch/master-plan/issues/26-expose-take-duration.md`
-  (promoted to the main backlog rather than kept feature-local).
 - Per-clip progress and the clips-open/clips-mastered counters are computed
   client-side from `GET /jobs?limit=100` (newest-first, reduced to latest
   score per practice) rather than a real aggregate endpoint — fine at today's

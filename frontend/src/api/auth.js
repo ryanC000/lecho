@@ -2,7 +2,7 @@
 // (documented XSS caveat in the implementation plan §1.3); revisit with
 // httpOnly cookies if this ever handles more sensitive data.
 
-import { request } from './client';
+import { apiFetch, request } from './client';
 
 const TOKEN_KEY = 'lecho_token';
 
@@ -22,6 +22,16 @@ export function clearToken() {
 
 export function isLoggedIn() {
   return !!getToken();
+}
+
+/** POST /auth/logout, then drop the token locally.
+ * Best-effort: an unreachable or failing backend must not strand the user
+ * logged in, so the local token is cleared either way. */
+export async function logout() {
+  try {
+    await apiFetch('/auth/logout', { method: 'POST' });
+  } catch { /* server-side revocation is best-effort */ }
+  clearToken();
 }
 
 /** POST /auth/register — backend expects JSON {email, password}. */

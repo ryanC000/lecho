@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate, Link, useLoaderData } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, Link, useLoaderData } from 'react-router-dom';
 import Recorder from '../components/Recorder';
 import AudioVisualizer from '../components/AudioVisualizer';
 import TranslationOverlay from '../components/TranslationOverlay';
@@ -12,7 +12,6 @@ import { LEVEL_COLORS } from '../constants/levels';
 const MODE_KEY = 'lecho_practice_mode';
 
 export default function Practice() {
-  const { id } = useParams();
   const navigate = useNavigate();
   const { practice, alignment } = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);

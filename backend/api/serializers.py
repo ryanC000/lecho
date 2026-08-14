@@ -9,8 +9,11 @@ from datetime import timezone
 from infra import models
 
 
-def job_list_item(job: models.ProsodyJob) -> dict:
-    """One row of the GET /jobs history list (schemas.JobListItem)."""
+def job_list_item(job: models.ProsodyJob, duration_seconds: float | None = None) -> dict:
+    """One row of the GET /jobs history list (schemas.JobListItem).
+
+    `duration_seconds` comes from the job's USER_RECORDING asset, looked up by
+    the caller in one grouped query rather than per row."""
     # SQLite hands back a naive UTC timestamp; tag it, or the browser reads the
     # offset-less ISO string as local time and every row is hours off.
     created_at = job.created_at
@@ -23,6 +26,7 @@ def job_list_item(job: models.ProsodyJob) -> dict:
         "status": job.status,
         "score": job.overall_match_score,
         "mode": job.mode,
+        "duration_seconds": duration_seconds,
         "created_at": created_at,
     }
 

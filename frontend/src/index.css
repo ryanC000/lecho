@@ -1003,18 +1003,6 @@
     color: var(--color-ink);
   }
 
-  /* Minutes tracking has no backend data yet (see ticket 01, dashboard-redesign) */
-  .week-placeholder {
-    height: 148px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    font-family: var(--font-hand);
-    font-size: 0.86rem;
-    color: var(--color-ink-mid);
-  }
-
   .recent-takes-list {
     display: grid;
     gap: 2px;
