@@ -4,6 +4,8 @@ This repository contains the source code for L'Écho, a web application designed
 
 ^_^
 
+<img width="1916" height="946" alt="Screenshot 2026-08-14 092515" src="https://github.com/user-attachments/assets/15c953bf-dd0b-4d18-9d6c-700b9b978653" />
+
 ## Setup & Installation
 
 Follow these steps to set up the backend and frontend services locally.
