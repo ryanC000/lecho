@@ -8,8 +8,10 @@ MIGRATIONS holds column additions: each entry is (table, column, DDL type).
 run() reads the existing columns (PRAGMA table_info on SQLite,
 information_schema.columns on PostgreSQL) and applies ALTER TABLE ADD COLUMN
 for missing ones, so it is safe to call on every app startup against any
-historical database. Relaxing users.password_hash to nullable (Google Sign-In)
-is the one non-additive step and is handled separately below.
+historical database. DROPPED_COLUMNS is the mirror image: columns the model has
+since removed, dropped when still present (SQLite 3.35+). Relaxing
+users.password_hash to nullable (Google Sign-In) is the one step neither list
+covers and is handled separately below.
 Never solve a schema change by deleting the DB — that destroys ingested
 native-clip rows.
 """
@@ -20,12 +22,23 @@ MIGRATIONS = [
     ("prosody_jobs", "timing_score", "FLOAT"),
     ("prosody_jobs", "energy_score", "FLOAT"),
     ("prosody_jobs", "content_score", "FLOAT"),
+    # Why a job FAILED, and which DSP version scored it. Both were added to the
+    # model without a migration, so pre-existing databases 500 on any job read.
+    ("prosody_jobs", "error_message", "TEXT"),
+    ("prosody_jobs", "algo_version", "TEXT"),
     # DEFAULT so pre-shadow rows read as solo (they were).
     ("prosody_jobs", "mode", "TEXT NOT NULL DEFAULT 'solo'"),
     # Word-anchored feedback (PRD 8.4): JSON list of the segment's words, nullable.
     ("analysis_segments", "words", "TEXT"),
     # DEFAULT so pre-Google rows read as password accounts (they were).
     ("users", "auth_provider", "TEXT NOT NULL DEFAULT 'password'"),
+]
+
+# Columns the model dropped, still present on older databases. AudioAsset
+# replaced prosody_jobs.user_s3_path, but the column stayed behind NOT NULL with
+# no default, so every insert into an untouched database fails.
+DROPPED_COLUMNS = [
+    ("prosody_jobs", "user_s3_path"),
 ]
 
 
@@ -95,5 +108,8 @@ def run(engine):
             existing = _existing_columns(conn, table)
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        for table, column in DROPPED_COLUMNS:
+            if column in _existing_columns(conn, table):
+                conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
         # After the loop: the rebuild copies auth_provider, so it must exist.
         _relax_password_hash(conn)

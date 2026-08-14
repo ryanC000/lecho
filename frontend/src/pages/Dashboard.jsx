@@ -273,31 +273,51 @@ function NewClipsBanner() {
   );
 }
 
+const LOADING = { status: 'loading', jobs: [], takes: [] };
+const SIGNED_OUT = { status: 'signed-out', jobs: [], takes: [] };
+
 /** Owner-scoped job history, same reasoning as History.jsx: fetched here
  * rather than through the route loader, which only ever calls unauthenticated apiGet. */
 function useJobHistory() {
   // `jobs` is the scored subset the score-driven panels read; `takes` keeps
   // every row, since minutes practiced counts a take whether or not it scored.
-  const [state, setState] = useState(() => (
-    isLoggedIn()
-      ? { status: 'loading', jobs: [], takes: [] }
-      : { status: 'signed-out', jobs: [], takes: [] }
-  ));
+  const [loggedIn, setLoggedIn] = useState(isLoggedIn);
+  const [history, setHistory] = useState(LOADING);
+
+  // api/auth dispatches 'lecho-auth-changed' on login/logout; without tracking it
+  // the panels keep whatever they showed at mount until the page is reloaded.
+  useEffect(() => {
+    const sync = () => setLoggedIn(isLoggedIn());
+    window.addEventListener('lecho-auth-changed', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('lecho-auth-changed', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  // Reset while rendering, not in an effect: signing in as someone else must
+  // not flash the previous session's rows before the refetch lands.
+  const [lastLoggedIn, setLastLoggedIn] = useState(loggedIn);
+  if (lastLoggedIn !== loggedIn) {
+    setLastLoggedIn(loggedIn);
+    setHistory(LOADING);
+  }
 
   useEffect(() => {
-    if (!isLoggedIn()) return; // already reflected in the lazy initial state above
+    if (!loggedIn) return; // the signed-out payload is returned below, not stored
     let cancelled = false;
     apiFetch(`/jobs?limit=${RECENT_JOBS_LIMIT}`)
       .then((res) => res.json())
       .then((body) => {
         if (cancelled) return;
-        setState({ status: 'ready', jobs: body.jobs.filter((j) => j.score != null), takes: body.jobs });
+        setHistory({ status: 'ready', jobs: body.jobs.filter((j) => j.score != null), takes: body.jobs });
       })
-      .catch(() => { if (!cancelled) setState({ status: 'error', jobs: [], takes: [] }); });
+      .catch(() => { if (!cancelled) setHistory({ status: 'error', jobs: [], takes: [] }); });
     return () => { cancelled = true; };
-  }, []);
+  }, [loggedIn]);
 
-  return state;
+  return loggedIn ? history : SIGNED_OUT;
 }
 
 /** Dimension scores aren't on the job-list endpoint, only the per-job detail one. */
@@ -305,7 +325,7 @@ function useLastTakeDetail(jobId) {
   const [detail, setDetail] = useState(null);
 
   useEffect(() => {
-    if (!jobId) return; // detail already starts null — nothing to reset
+    if (!jobId) return;
     let cancelled = false;
     apiFetch(`/jobs/${jobId}`)
       .then((res) => res.json())
@@ -314,7 +334,9 @@ function useLastTakeDetail(jobId) {
     return () => { cancelled = true; };
   }, [jobId]);
 
-  return detail;
+  // Derived, not cleared in an effect: logging out drops the last take, and the
+  // panel must not go on showing its scores.
+  return jobId ? detail : null;
 }
 
 export default function Dashboard() {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './Dashboard';
 import { apiFetch } from '../api/client';
@@ -132,6 +132,37 @@ describe('Dashboard "min shadowed" stat', () => {
 
     renderDashboard();
 
+    expect(statNote('min shadowed')).toBe('—');
+  });
+});
+
+describe('Dashboard auth changes', () => {
+  it('loads the history when logging in, without a reload', async () => {
+    isLoggedIn.mockReturnValue(false);
+    mockJobs([take('job-1', { mode: 'shadow', duration_seconds: 300 })]);
+
+    renderDashboard();
+    expect(await screen.findByText(/log in to see your minutes/i)).toBeInTheDocument();
+
+    // What api/auth does on login: store the token, announce it.
+    isLoggedIn.mockReturnValue(true);
+    act(() => window.dispatchEvent(new Event('lecho-auth-changed')));
+
+    await waitFor(() => expect(statNote('min shadowed')).toBe('5'));
+  });
+
+  it('clears the history when logging out, without a reload', async () => {
+    mockJobs([take('job-1', { mode: 'shadow', duration_seconds: 300 })]);
+
+    renderDashboard();
+    await waitFor(() => expect(statNote('min shadowed')).toBe('5'));
+
+    isLoggedIn.mockReturnValue(false);
+    act(() => window.dispatchEvent(new Event('lecho-auth-changed')));
+
+    // Signed-out prompts return, and no scored take is left on screen.
+    expect(await screen.findByText(/log in to see your minutes/i)).toBeInTheDocument();
+    expect(await screen.findByText(/log in to see your performance breakdown/i)).toBeInTheDocument();
     expect(statNote('min shadowed')).toBe('—');
   });
 });
