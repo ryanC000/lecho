@@ -131,7 +131,9 @@ const router = createBrowserRouter([
           const practice = await apiGet(`/practices/${params.id}`);
           // Alignment is optional: unaligned practices 404 → karaoke off.
           const alignment = await apiGet(`/practices/${params.id}/alignment`).catch(() => null);
-          return { practice, alignment };
+          // Audio is optional too: no reference clip ingested yet → 404.
+          const audio = await apiGet(`/practices/${params.id}/audio-url`).catch(() => null);
+          return { practice, alignment, audio };
         }
       },
       {

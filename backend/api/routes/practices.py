@@ -42,6 +42,21 @@ def get_practice_audio(practice_id: int, db: Session = Depends(database.get_db))
     return storage.audio_response(practice.audio_url)
 
 
+@router.get("/practices/{practice_id}/audio-url")
+def get_practice_audio_url(practice_id: int, db: Session = Depends(database.get_db)):
+    """The URL a fetch()-based player should load directly — see
+    storage.direct_audio_url for why this differs from GET .../audio."""
+    practice = db.query(models.Practice).filter(models.Practice.id == practice_id).first()
+    if not practice:
+        raise HTTPException(status_code=404, detail="Practice not found")
+    if not practice.audio_url:
+        raise HTTPException(status_code=404, detail="This practice has no reference audio yet.")
+    if not storage.exists(practice.audio_url):
+        raise HTTPException(status_code=404, detail="Reference audio file is missing from storage.")
+    same_origin_path = f"/practices/{practice_id}/audio"
+    return {"url": storage.direct_audio_url(practice.audio_url, same_origin_path)}
+
+
 @router.get("/practices/{practice_id}/alignment")
 def get_practice_alignment(practice_id: int, db: Session = Depends(database.get_db)):
     """Serve a practice's word-alignment JSON (PRD 8.4), produced offline by

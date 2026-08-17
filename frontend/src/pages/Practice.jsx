@@ -13,7 +13,7 @@ const MODE_KEY = 'lecho_practice_mode';
 
 export default function Practice() {
   const navigate = useNavigate();
-  const { practice, alignment } = useLoaderData();
+  const { practice, alignment, audio } = useLoaderData();
   const [userAudioUrl, setUserAudioUrl] = useState(null);
   const [uploadError, setUploadError] = useState(null);
   const [nativeWave, setNativeWave] = useState(null);
@@ -26,10 +26,11 @@ export default function Practice() {
     sessionStorage.setItem(MODE_KEY, next);
   };
 
-  // Native clips are served by the backend; no reference audio means the
-  // practice isn't ready — never substitute a synthetic tone.
-  const nativeAudioUrl = practice?.audio_url
-    ? `${API_BASE}/practices/${practice.id}/audio`
+  // Fetched directly by wavesurfer, not through the redirecting /audio route
+  // (see storage.direct_audio_url) — no reference audio means the practice
+  // isn't ready, never substitute a synthetic tone.
+  const nativeAudioUrl = audio?.url
+    ? (audio.url.startsWith('http') ? audio.url : `${API_BASE}${audio.url}`)
     : null;
 
   const handleUpload = async (audioBlob, duration, takeMode = 'solo') => {

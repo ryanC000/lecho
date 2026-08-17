@@ -53,10 +53,14 @@ def _s3():
 
         # SigV4 explicitly: botocore still presigns with the legacy SigV2 scheme
         # by default, which regions launched after 2014 reject.
+        # generate_presigned_url ignores region_name and defaults to the global
+        # s3.amazonaws.com host, which 307-redirects outside us-east-1 — pin the
+        # endpoint explicitly so presigned URLs land on the regional host too.
+        endpoint = S3_ENDPOINT_URL or (f"https://s3.{S3_REGION}.amazonaws.com" if S3_REGION else None)
         _client = boto3.client(
             "s3",
             region_name=S3_REGION,
-            endpoint_url=S3_ENDPOINT_URL,
+            endpoint_url=endpoint,
             config=Config(signature_version="s3v4"),
         )
     return _client
@@ -152,7 +156,11 @@ def get_path(key: str) -> Path:
 
 
 def exists(key: str) -> bool:
-    """Whether an object is stored at `key`. (S3: HEAD request.)"""
+    """Whether an object is stored at `key`. (S3: HEAD request.)
+
+    Without s3:ListBucket (deliberately not granted — see k8s/README.md) S3
+    returns 403, not 404, for a missing key, so both read as "not found".
+    """
     if BACKEND == BACKEND_S3:
         from botocore.exceptions import ClientError
 
@@ -160,7 +168,7 @@ def exists(key: str) -> bool:
             _s3().head_object(Bucket=S3_BUCKET, Key=_s3key(key))
             return True
         except ClientError as exc:
-            if exc.response["ResponseMetadata"]["HTTPStatusCode"] == 404:
+            if exc.response["ResponseMetadata"]["HTTPStatusCode"] in (404, 403):
                 return False
             raise
     return (STORAGE_ROOT / key).exists()
@@ -190,6 +198,23 @@ def audio_response(key: str, media_type: str = "audio/wav"):
         )
         return RedirectResponse(url)
     return FileResponse(STORAGE_ROOT / key, media_type=media_type)
+
+
+def direct_audio_url(key: str, same_origin_path: str, media_type: str = "audio/wav") -> str:
+    """Single-hop URL for fetch()-based players (wavesurfer etc).
+
+    S3: the presigned URL itself, not audio_response's redirect — a fetch()
+    that follows a redirect across two different origins (API, then S3) has
+    the Origin header dropped by the browser on that second hop, which breaks
+    CORS. Local: `same_origin_path` already serves the bytes with no redirect.
+    """
+    if BACKEND == BACKEND_S3:
+        return _s3().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": _s3key(key), "ResponseContentType": media_type},
+            ExpiresIn=PRESIGN_EXPIRY_S,
+        )
+    return same_origin_path
 
 
 def save_text(text: str, key: str) -> str:
