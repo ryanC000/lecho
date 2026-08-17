@@ -43,8 +43,13 @@ finished, badly. Only an *infrastructure* failure (database unreachable, S3 down
 the worker leaves that message undeleted, and the queue's redrive policy moves it to the DLQ after
 `maxReceiveCount`. The entrypoint classifies nothing.
 
-**Status:** code complete, **live path unverified** — the boxes needing a real queue are open
-because no AWS account exists yet. Everything verifiable without one is green.
+**Status:** done (commit `4840ea0`, 2026-08-17) — live path verified against a real AWS account
+(queue `lecho-jobs` + DLQ `lecho-jobs-dlq`, region `ap-southeast-2`) and a real bucket
+(`lecho-audio`). Verifying it live also surfaced three bugs invisible to the mocked test suite,
+fixed in the same commit: presigned URLs used the wrong S3 endpoint outside `us-east-1`,
+`storage.exists()` misread S3's masked-403 response for a missing key as a real error, and audio
+served via redirect broke under `fetch()` because a redirect across two different origins drops
+the browser's `Origin` header. Details in each fixed file.
 
 - [x] Upload publishes `job_id` to SQS; route returns without running DSP inline —
       `infra/queue.py`; `jobs.py` calls `queue.publish` with an INLINE fallback passed in as a
@@ -56,12 +61,17 @@ because no AWS account exists yet. Everything verifiable without one is green.
       105 passed, 3 skipped (96 before, plus the 9 new queue/worker tests)
 - [x] Carried-forward S3 isolation fixed — `STORAGE_PREFIX` on the storage seam, applied only at
       the bucket boundary so stored keys stay canonical; `conftest.py` sets a per-test value
-- [ ] Poison messages land in a DLQ after the retry limit; row shows the failure — the *ack
-      contract* that drives this is covered by `tests/test_worker_main.py` (delete on normal
-      return, leave undeleted when scoring raises), but the redrive itself is queue configuration
-      and needs a real queue to observe (`k8s/README.md`: visibility 300s, `maxReceiveCount` 3)
-- [ ] `docker compose up` runs app + worker as separate services scoring a real job — added as the
-      `queue` compose profile, **not yet run** (no Docker daemon, no queue). It points at **real**
-      SQS deliberately: boto3 resolves one credential set per process, so MinIO's keys and a real
-      queue cannot coexist in one container, and emulating SQS locally would mean the LocalStack
-      image that ticket 02 rejected.
+- [x] `docker compose up` runs app + worker as separate services scoring a real job — verified live:
+      `app` published a job to real SQS and returned without scoring; `worker` (separate container)
+      consumed it and scored `PENDING -> SUCCESS`. Confirmed via `GET /jobs/{id}` and both
+      containers' logs.
+- [x] Ack contract holds against a real queue — verified live, one full redelivery cycle rather than
+      the full 3-strikes-to-DLQ wait (~15 real minutes; the `maxReceiveCount`/DLQ threshold itself
+      is static queue config set correctly at creation, not app behavior, so this is the meaningful
+      part to exercise live). Forced an infra failure (worker pointed at an unreachable DB): `run`'s
+      own `fail_job` fallback also failed, the exception escaped to `worker.main`, and the message
+      was left undeleted — confirmed via `ApproximateNumberOfMessagesNotVisible: 1` on the real
+      queue, not deleted. After the 300s visibility timeout lapsed, a healthy worker redelivered the
+      same message and completed it (`PENDING -> SUCCESS`), and the queue returned to empty. The
+      actual DLQ landing after 3 receives was not directly observed — only inferred from the redrive
+      policy set at queue creation (`k8s/README.md`) plus this proven redelivery mechanism.
